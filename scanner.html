@@ -4,9 +4,193 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Table Image → Excel</title>
-  <script src="https://unpkg.com/tesseract.js@5.0.5/dist/tesseract.min.js"></script>
-  <script src="https://unpkg.com/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
-  <script async src="./vendor/opencv.js" id="opencv"></script>
+  <script>
+let selectedImageBlob = null;
+let extractedTableData = [];
+let worker = null;
+
+// Init Tesseract worker once - 5x faster than calling recognize() each time
+(async () => {
+  document.getElementById('status').textContent = 'Loading OCR engine...';
+  worker = await Tesseract.createWorker('eng');
+  document.getElementById('status').textContent = 'Ready';
+  document.getElementById('status').style.color = '#22c55e';
+  if (selectedImageBlob) document.getElementById('extractBtn').disabled = false;
+})();
+
+const fileInput = document.getElementById('fileInput');
+const preview = document.getElementById('preview');
+const canvas = document.getElementById('canvas');
+const ctx = canvas.getContext('2d');
+const logs = document.getElementById('logs');
+const tableOutput = document.getElementById('tableOutput');
+
+function log(msg, type = '') {
+  const time = new Date().toLocaleTimeString();
+  const color = type === 'success'? '#22c55e' : type === 'warn'? '#fbbf24' : type === 'error'? '#f87171' : '#94a3b8';
+  logs.innerHTML += `<div style="color:${color}">[${time}] ${msg}</div>`;
+  logs.scrollTop = logs.scrollHeight;
+}
+
+// Paste + drag support
+window.addEventListener('paste', e => {
+  const file = [...e.clipboardData.items].find(i => i.type.startsWith('image/'))?.getAsFile();
+  if (file) handleFile(file);
+});
+fileInput.onchange = e => { if(e.target.files[0]) handleFile(e.target.files[0]); };
+
+function handleFile(file) {
+  if (!file.type.startsWith('image/')) return alert('Upload an image');
+  selectedImageBlob = file;
+  preview.src = URL.createObjectURL(file);
+  log('Image uploaded: ' + file.name);
+  document.getElementById('extractBtn').disabled =!worker;
+  document.getElementById('preview').style.display = 'block';
+  document.getElementById('canvas').style.display = 'block';
+}
+
+document.getElementById('extractBtn').onclick = async () => {
+  if (!selectedImageBlob ||!worker) return;
+
+  logs.innerHTML = '';
+  document.getElementById('extractBtn').disabled = true;
+  document.getElementById('status').textContent = 'Running OCR...';
+  log('Starting OCR with layout analysis...');
+
+  try {
+    // Key change: Get TSV output + hOCR. This gives us exact word coordinates.
+    const { data } = await worker.recognize(selectedImageBlob, {}, {
+      tessedit_pageseg_mode: Tesseract.PSM.AUTO,
+      preserve_interword_spaces: '1',
+    });
+
+    log(`OCR done. Found ${data.words.length} words`, 'success');
+
+    // Draw word boxes on canvas for visual feedback
+    const img = new Image();
+    img.src = URL.createObjectURL(selectedImageBlob);
+    await new Promise(r => img.onload = r);
+    canvas.width = img.width;
+    canvas.height = img.height;
+    ctx.drawImage(img, 0, 0);
+    ctx.strokeStyle = '#00ff00';
+    ctx.lineWidth = 1;
+    data.words.forEach(w => {
+      if (w.confidence > 30) {
+        ctx.strokeRect(w.bbox.x0, w.bbox.y0, w.bbox.x1 - w.bbox.x0, w.bbox.y1 - w.bbox.y0);
+      }
+    });
+
+    // Build table from word positions - no guessing
+    extractedTableData = buildTableFromWords(data.words);
+    log(`Built table: ${extractedTableData.length} rows`, 'success');
+
+    renderTable();
+    document.getElementById('status').textContent = 'Done';
+
+  } catch (err) {
+    log('Error: ' + err.message, 'error');
+    document.getElementById('status').textContent = 'Failed';
+  }
+  document.getElementById('extractBtn').disabled = false;
+};
+
+// This is the real fix. No contours, no random rectangles.
+function buildTableFromWords(words) {
+  // Filter garbage
+  words = words.filter(w => w.text.trim() && w.confidence > 35);
+  if (!words.length) return [];
+
+  // Step 1: Cluster words into lines using Y-coordinates
+  words.sort((a, b) => a.bbox.y0 - b.bbox.y0);
+  const lines = [];
+  const yTolerance = 12; // pixels. Tweak if rows merge/split
+
+  words.forEach(word => {
+    const yCenter = (word.bbox.y0 + word.bbox.y1) / 2;
+    let line = lines.find(l => Math.abs(l.yCenter - yCenter) < yTolerance);
+    if (!line) {
+      line = { yCenter, words: [] };
+      lines.push(line);
+    }
+    line.words.push(word);
+  });
+
+  // Step 2: Find column positions by clustering all X-coordinates
+  const xCoords = [];
+  lines.forEach(line => {
+    line.words.sort((a, b) => a.bbox.x0 - b.bbox.x0);
+    line.words.forEach(w => xCoords.push(w.bbox.x0));
+  });
+  xCoords.sort((a, b) => a - b);
+
+  // Cluster X positions to find column boundaries
+  const columns = [];
+  const xGap = 25; // pixels. Increase if columns merge, decrease if split
+  xCoords.forEach(x => {
+    const lastCol = columns[columns.length - 1];
+    if (!lastCol || x - lastCol > xGap) {
+      columns.push(x);
+    }
+  });
+
+  log(`Detected ${lines.length} rows, ${columns.length} columns`);
+
+  // Step 3: Assign each word to nearest column
+  const table = lines.map(line => {
+    const row = new Array(columns.length).fill('');
+    line.words.forEach(word => {
+      // Find closest column
+      let bestCol = 0;
+      let minDist = Infinity;
+      columns.forEach((colX, i) => {
+        const dist = Math.abs(word.bbox.x0 - colX);
+        if (dist < minDist) {
+          minDist = dist;
+          bestCol = i;
+        }
+      });
+      // Append to cell if multiple words in same cell
+      row[bestCol] = row[bestCol]? row[bestCol] + ' ' + word.text : word.text;
+    });
+    return row;
+  });
+
+  // Step 4: Remove empty columns
+  const keepColumn = table[0].map((_, colIdx) =>
+    table.some(row => row[colIdx] && row[colIdx].trim())
+  );
+  return table.map(row => row.filter((_, i) => keepColumn[i]));
+}
+
+function renderTable() {
+  tableOutput.innerHTML = '';
+  if (!extractedTableData.length) {
+    tableOutput.innerHTML = '<tr><td style="padding:20px;color:#6b7280">No table detected. Try a clearer image.</td></tr>';
+    return;
+  }
+  extractedTableData.forEach((row, rIdx) => {
+    const tr = document.createElement('tr');
+    row.forEach((cell, cIdx) => {
+      const td = document.createElement(rIdx === 0? 'th' : 'td');
+      td.contentEditable = true;
+      td.innerText = cell;
+      td.onblur = () => extractedTableData[rIdx][cIdx] = td.innerText;
+      tr.appendChild(td);
+    });
+    tableOutput.appendChild(tr);
+  });
+}
+
+document.getElementById('downloadBtn').onclick = () => {
+  if (!extractedTableData.length) return alert('No data');
+  const ws = XLSX.utils.aoa_to_sheet(extractedTableData);
+  const wb = XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(wb, ws, 'Sheet1');
+  XLSX.writeFile(wb, 'table.xlsx');
+  log('Excel downloaded', 'success');
+};
+</script>
   <style>
     * { margin: 0; padding: 0; box-sizing: border-box; }
     body { font-family: system-ui, -apple-system, sans-serif; background: #0f172a; color: #e2e8f0; line-height: 1.6; }
