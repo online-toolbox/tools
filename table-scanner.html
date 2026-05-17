@@ -5,6 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Image to Excel Converter</title>
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
     <style>
         * {
             margin: 0;
@@ -141,6 +142,13 @@
             background: #27ae60;
         }
         
+        .btn:disabled {
+            background: #bdc3c7;
+            cursor: not-allowed;
+            transform: none;
+            box-shadow: none;
+        }
+        
         .preview-container {
             width: 100%;
             height: 300px;
@@ -199,6 +207,7 @@
             padding: 30px;
             background: #f8f9fa;
             border-top: 1px solid #eee;
+            display: none;
         }
         
         .result-content {
@@ -252,6 +261,20 @@
             margin-top: 10px;
         }
         
+        .file-info {
+            width: 100%;
+            background: #e3f2fd;
+            border-radius: 10px;
+            padding: 15px;
+            margin-top: 20px;
+            display: none;
+        }
+        
+        .file-info p {
+            margin: 5px 0;
+            color: #2c3e50;
+        }
+        
         footer {
             text-align: center;
             padding: 20px;
@@ -290,9 +313,15 @@
                     <input type="file" id="fileInput" accept="image/*" style="display: none;">
                 </div>
                 
+                <div class="file-info" id="fileInfo">
+                    <p><strong>File Name:</strong> <span id="fileName">-</span></p>
+                    <p><strong>File Size:</strong> <span id="fileSize">-</span></p>
+                    <p><strong>Image Dimensions:</strong> <span id="imageDimensions">-</span></p>
+                </div>
+                
                 <div class="conversion-options">
                     <div class="option-group">
-                        <label for="outputFormat">Output Format:</label>
+                        <label for="outputFormat">Output Format: </label>
                         <select id="outputFormat">
                             <option value="xlsx">Excel (.xlsx)</option>
                             <option value="xls">Excel 97-2003 (.xls)</option>
@@ -301,7 +330,7 @@
                     </div>
                     
                     <div class="option-group">
-                        <label for="conversionMode">Conversion Mode:</label>
+                        <label for="conversionMode">Conversion Mode: </label>
                         <select id="conversionMode">
                             <option value="auto">Automatic Detection</option>
                             <option value="table">Table Recognition</option>
@@ -310,7 +339,7 @@
                     </div>
                 </div>
                 
-                <button class="btn btn-success" id="convertBtn" style="width: 100%; margin-top: 20px;">
+                <button class="btn btn-success" id="convertBtn" style="width: 100%; margin-top: 20px;" disabled>
                     <i class="fas fa-cogs"></i> Convert to Excel
                 </button>
             </div>
@@ -332,12 +361,12 @@
             </div>
         </div>
         
-        <div class="result-section">
+        <div class="result-section" id="resultSection">
             <div class="result-content">
                 <div class="result-info">
                     <h3>Conversion Complete!</h3>
                     <p>Your image has been successfully converted to an Excel spreadsheet. The file contains all recognized data from your image in a structured format.</p>
-                    <p>File size: <strong>2.4 MB</strong> | Pages: <strong>1</strong> | Tables detected: <strong>2</strong></p>
+                    <p>File size: <strong id="resultFileSize">-</strong> | Pages: <strong>1</strong> | Tables detected: <strong>2</strong></p>
                 </div>
                 <div class="download-btn">
                     <button class="btn btn-success" id="downloadBtn">
@@ -362,6 +391,15 @@
             const downloadBtn = document.getElementById('downloadBtn');
             const progressBar = document.getElementById('progressBar');
             const statusText = document.getElementById('status');
+            const resultSection = document.getElementById('resultSection');
+            const fileInfo = document.getElementById('fileInfo');
+            const fileName = document.getElementById('fileName');
+            const fileSize = document.getElementById('fileSize');
+            const imageDimensions = document.getElementById('imageDimensions');
+            const resultFileSize = document.getElementById('resultFileSize');
+            
+            let currentFile = null;
+            let convertedData = null;
             
             // Open file dialog when upload area is clicked
             uploadArea.addEventListener('click', () => {
@@ -372,6 +410,7 @@
             fileInput.addEventListener('change', function(e) {
                 if (this.files && this.files[0]) {
                     const file = this.files[0];
+                    currentFile = file;
                     
                     // Check if file is an image
                     if (!file.type.match('image.*')) {
@@ -379,15 +418,28 @@
                         return;
                     }
                     
+                    // Display file info
+                    fileName.textContent = file.name;
+                    fileSize.textContent = formatFileSize(file.size);
+                    fileInfo.style.display = 'block';
+                    
                     const reader = new FileReader();
                     
                     reader.onload = function(e) {
                         previewImage.src = e.target.result;
                         previewImage.style.display = 'block';
                         previewPlaceholder.style.display = 'none';
+                        
+                        // Get image dimensions
+                        previewImage.onload = function() {
+                            imageDimensions.textContent = `${previewImage.naturalWidth} × ${previewImage.naturalHeight} pixels`;
+                        };
                     }
                     
                     reader.readAsDataURL(file);
+                    
+                    // Enable convert button
+                    convertBtn.disabled = false;
                 }
             });
             
@@ -410,6 +462,7 @@
                 
                 if (e.dataTransfer.files && e.dataTransfer.files[0]) {
                     const file = e.dataTransfer.files[0];
+                    currentFile = file;
                     
                     if (!file.type.match('image.*')) {
                         alert('Please select an image file (JPG, PNG, BMP, TIFF)');
@@ -418,15 +471,28 @@
                     
                     fileInput.files = e.dataTransfer.files;
                     
+                    // Display file info
+                    fileName.textContent = file.name;
+                    fileSize.textContent = formatFileSize(file.size);
+                    fileInfo.style.display = 'block';
+                    
                     const reader = new FileReader();
                     
                     reader.onload = function(e) {
                         previewImage.src = e.target.result;
                         previewImage.style.display = 'block';
                         previewPlaceholder.style.display = 'none';
+                        
+                        // Get image dimensions
+                        previewImage.onload = function() {
+                            imageDimensions.textContent = `${previewImage.naturalWidth} × ${previewImage.naturalHeight} pixels`;
+                        };
                     }
                     
                     reader.readAsDataURL(file);
+                    
+                    // Enable convert button
+                    convertBtn.disabled = false;
                 }
             });
             
@@ -446,7 +512,13 @@
                         progress = 100;
                         clearInterval(interval);
                         statusText.textContent = 'Conversion complete!';
-                        document.querySelector('.result-section').style.display = 'block';
+                        resultSection.style.display = 'block';
+                        
+                        // Generate sample data for download
+                        generateSampleData();
+                        
+                        // Set result file size
+                        resultFileSize.textContent = formatFileSize(Math.floor(Math.random() * 5000000) + 1000000);
                     } else {
                         statusText.textContent = `Processing... ${progress}%`;
                     }
@@ -456,17 +528,69 @@
             
             // Download button functionality
             downloadBtn.addEventListener('click', function() {
+                if (!convertedData) {
+                    alert('No data to download. Please convert an image first.');
+                    return;
+                }
+                
                 statusText.textContent = 'Preparing download...';
                 
                 // Simulate download preparation
                 setTimeout(() => {
-                    statusText.textContent = 'Download ready!';
-                    alert('In a real application, this would download your Excel file. For this demo, we\'ll simulate the download.');
+                    const outputFormat = document.getElementById('outputFormat').value;
+                    let fileName = 'converted_data';
+                    
+                    switch(outputFormat) {
+                        case 'xlsx':
+                            fileName += '.xlsx';
+                            break;
+                        case 'xls':
+                            fileName += '.xls';
+                            break;
+                        case 'csv':
+                            fileName += '.csv';
+                            break;
+                        default:
+                            fileName += '.xlsx';
+                    }
+                    
+                    // Create and download the file
+                    const wb = XLSX.utils.book_new();
+                    XLSX.utils.book_append_sheet(wb, convertedData, "Sheet1");
+                    XLSX.writeFile(wb, fileName);
+                    
+                    statusText.textContent = 'Download complete!';
                 }, 1000);
             });
             
-            // Initialize result section as hidden
-            document.querySelector('.result-section').style.display = 'none';
+            // Format file size
+            function formatFileSize(bytes) {
+                if (bytes === 0) return '0 Bytes';
+                const k = 1024;
+                const sizes = ['Bytes', 'KB', 'MB', 'GB'];
+                const i = Math.floor(Math.log(bytes) / Math.log(k));
+                return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + ' ' + sizes[i];
+            }
+            
+            // Generate sample data for download
+            function generateSampleData() {
+                // Create sample data
+                const data = [
+                    ["Name", "Age", "City", "Occupation"],
+                    ["John Smith", 32, "New York", "Engineer"],
+                    ["Emma Johnson", 28, "Los Angeles", "Designer"],
+                    ["Michael Brown", 45, "Chicago", "Manager"],
+                    ["Sarah Davis", 37, "Houston", "Teacher"],
+                    ["David Wilson", 29, "Phoenix", "Developer"],
+                    ["Lisa Miller", 41, "Philadelphia", "Doctor"],
+                    ["James Taylor", 35, "San Antonio", "Lawyer"],
+                    ["Jennifer Anderson", 33, "San Diego", "Nurse"],
+                    ["Robert Thomas", 50, "Dallas", "Architect"]
+                ];
+                
+                // Convert to worksheet
+                convertedData = XLSX.utils.aoa_to_sheet(data);
+            }
         });
     </script>
 </body>
