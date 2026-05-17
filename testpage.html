@@ -1,71 +1,4 @@
-<!DOCTYPE html>
-<html lang="en">
-<head>
-<meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0">
-
-<title>Table Image to Excel</title>
-
-<script src="https://cdn.tailwindcss.com"></script>
-
-<script async src="https://docs.opencv.org/4.x/opencv.js"></script>
-
-<script src="https://cdn.jsdelivr.net/npm/tesseract.js@5/dist/tesseract.min.js"></script>
-
-<script src="https://cdn.sheetjs.com/xlsx-0.20.2/package/dist/xlsx.full.min.js"></script>
-
-<style>
-body{
-    background:#0f172a;
-    color:white;
-    font-family:Arial;
-}
-
-table{
-    border-collapse:collapse;
-    width:100%;
-}
-
-td,th{
-    border:1px solid #334155;
-    padding:6px;
-}
-
-canvas{
-    max-width:100%;
-}
-</style>
-</head>
-<body class="p-6">
-
-<div class="max-w-7xl mx-auto">
-
-<h1 class="text-4xl font-bold mb-2">
-📊 Table Image → Excel
-</h1>
-
-<p class="text-slate-400 mb-6">
-Runs fully locally in your browser.
-</p>
-
-<input type="file" id="fileInput" accept="image/*"
-class="mb-5 block">
-
-<div class="grid md:grid-cols-2 gap-6">
-
-<div>
-<h2 class="text-2xl mb-3">Original</h2>
-<img id="preview" class="rounded-xl">
-</div>
-
-<div>
-<h2 class="text-2xl mb-3">Detected Table</h2>
-<canvas id="canvas"></canvas>
-</div>
-
-</div>
-
-<div class="mt-6 flex gap-4">
+<div class="mt-6 flex flex-wrap gap-4 items-center">
 
 <button id="extractBtn"
 class="bg-sky-500 px-6 py-3 rounded-xl">
@@ -77,257 +10,32 @@ class="bg-emerald-500 px-6 py-3 rounded-xl">
 Download Excel
 </button>
 
+<label class="flex items-center gap-2 ml-4">
+
+<input
+type="checkbox"
+id="tableOnlyToggle"
+checked
+class="w-5 h-5"
+/>
+
+<span>Table Only Mode</span>
+
+</label>
+
 </div>
 
-<p id="status" class="mt-5 text-sky-400"></p>
+<!-- Logs -->
 
-<div class="mt-8 overflow-auto">
+<div class="mt-6">
 
-<table id="tableOutput"></table>
+<h2 class="text-xl mb-2 font-semibold">
+Live Processing Logs
+</h2>
+
+<div
+id="logs"
+class="bg-black text-green-400 rounded-xl p-4 h-64 overflow-auto text-sm font-mono"
+></div>
 
 </div>
-
-</div>
-
-<script>
-
-let uploadedFile = null;
-let extractedTable = [];
-
-const fileInput = document.getElementById('fileInput');
-const preview = document.getElementById('preview');
-const canvas = document.getElementById('canvas');
-const ctx = canvas.getContext('2d');
-
-const statusText = document.getElementById('status');
-const tableOutput = document.getElementById('tableOutput');
-
-fileInput.addEventListener('change', e => {
-
-    uploadedFile = e.target.files[0];
-
-    if(!uploadedFile) return;
-
-    const reader = new FileReader();
-
-    reader.onload = ev => {
-        preview.src = ev.target.result;
-    };
-
-    reader.readAsDataURL(uploadedFile);
-});
-
-function setStatus(text){
-    statusText.innerText = text;
-}
-
-document.getElementById('extractBtn')
-.addEventListener('click', async ()=>{
-
-    if(!uploadedFile){
-        alert('Upload image first');
-        return;
-    }
-
-    setStatus('Loading image...');
-
-    const img = new Image();
-
-    img.src = URL.createObjectURL(uploadedFile);
-
-    img.onload = async ()=>{
-
-        canvas.width = img.width;
-        canvas.height = img.height;
-
-        ctx.drawImage(img,0,0);
-
-        let src = cv.imread(canvas);
-
-        let gray = new cv.Mat();
-
-        cv.cvtColor(src,gray,cv.COLOR_RGBA2GRAY);
-
-        let binary = new cv.Mat();
-
-        cv.threshold(
-            gray,
-            binary,
-            150,
-            255,
-            cv.THRESH_BINARY_INV
-        );
-
-        // Detect contours
-        let contours = new cv.MatVector();
-        let hierarchy = new cv.Mat();
-
-        cv.findContours(
-            binary,
-            contours,
-            hierarchy,
-            cv.RETR_TREE,
-            cv.CHAIN_APPROX_SIMPLE
-        );
-
-        let cells = [];
-
-        for(let i=0;i<contours.size();i++){
-
-            let cnt = contours.get(i);
-
-            let rect = cv.boundingRect(cnt);
-
-            // Ignore tiny boxes
-            if(rect.width > 40 && rect.height > 20){
-
-                cells.push(rect);
-
-                cv.rectangle(
-                    src,
-                    new cv.Point(rect.x, rect.y),
-                    new cv.Point(rect.x+rect.width,
-                                 rect.y+rect.height),
-                    [0,255,0,255],
-                    2
-                );
-            }
-        }
-
-        cv.imshow(canvas,src);
-
-        setStatus('Sorting cells...');
-
-        // Sort top-to-bottom
-        cells.sort((a,b)=>{
-
-            if(Math.abs(a.y-b.y) < 10){
-                return a.x - b.x;
-            }
-
-            return a.y - b.y;
-        });
-
-        // Group rows
-        let rows = [];
-        let currentRow = [];
-
-        let lastY = -1;
-
-        cells.forEach(cell=>{
-
-            if(lastY === -1 ||
-               Math.abs(cell.y-lastY) < 15){
-
-                currentRow.push(cell);
-
-            }else{
-
-                rows.push(currentRow);
-                currentRow = [cell];
-            }
-
-            lastY = cell.y;
-        });
-
-        if(currentRow.length){
-            rows.push(currentRow);
-        }
-
-        setStatus('OCR per cell...');
-
-        extractedTable = [];
-
-        for(let r=0;r<rows.length;r++){
-
-            let rowData = [];
-
-            rows[r].sort((a,b)=>a.x-b.x);
-
-            for(let c=0;c<rows[r].length;c++){
-
-                let rect = rows[r][c];
-
-                let roi = src.roi(rect);
-
-                let tempCanvas =
-                    document.createElement('canvas');
-
-                cv.imshow(tempCanvas, roi);
-
-                const {
-                    data:{text}
-                } = await Tesseract.recognize(
-                    tempCanvas,
-                    'eng'
-                );
-
-                rowData.push(text.trim());
-
-                roi.delete();
-            }
-
-            extractedTable.push(rowData);
-        }
-
-        renderTable(extractedTable);
-
-        src.delete();
-        gray.delete();
-        binary.delete();
-        contours.delete();
-        hierarchy.delete();
-
-        setStatus('Done ✅');
-    };
-});
-
-function renderTable(data){
-
-    tableOutput.innerHTML = '';
-
-    data.forEach((row,rowIndex)=>{
-
-        const tr = document.createElement('tr');
-
-        row.forEach(cell=>{
-
-            const td = document.createElement(
-                rowIndex===0 ? 'th':'td'
-            );
-
-            td.innerText = cell;
-
-            tr.appendChild(td);
-        });
-
-        tableOutput.appendChild(tr);
-    });
-}
-
-document.getElementById('downloadBtn')
-.addEventListener('click',()=>{
-
-    if(!extractedTable.length){
-        alert('No data');
-        return;
-    }
-
-    const ws =
-        XLSX.utils.aoa_to_sheet(extractedTable);
-
-    const wb = XLSX.utils.book_new();
-
-    XLSX.utils.book_append_sheet(
-        wb,
-        ws,
-        'Sheet1'
-    );
-
-    XLSX.writeFile(wb,'table.xlsx');
-});
-
-</script>
-
-</body>
-</html>
