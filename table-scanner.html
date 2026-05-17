@@ -6,39 +6,40 @@
   <title>Image to Excel Converter - Free OCR Table Scanner</title>
   <meta name="description" content="Convert JPG, PNG, screenshots to editable Excel files. Free AI table detection. Paste image, get XLSX. Runs in browser, no upload needed.">
   <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
-  <script src="https://cdn.jsdelivr.net/npm/@paddlejs-models/ocr@1.0.1/dist/index.min.js"></script>
+  <!-- Fixed: Correct PaddleOCR CDN + UMD build -->
+  <script src="https://unpkg.com/@paddle-js-models/ocr@1.3.0/dist/index.js"></script>
   <style>
     * { margin: 0; padding: 0; box-sizing: border-box; }
     body { font-family: system-ui, -apple-system, sans-serif; background: #0f172a; color: #e2e8f0; line-height: 1.6; }
-  .container { max-width: 1200px; margin: 0 auto; padding: 40px 20px; }
+   .container { max-width: 1200px; margin: 0 auto; padding: 40px 20px; }
     h1 { font-size: 2rem; margin-bottom: 8px; background: linear-gradient(90deg, #38bdf8, #818cf8); -webkit-background-clip: text; -webkit-text-fill-color: transparent; }
-  .subtitle { color: #94a3b8; margin-bottom: 30px; }
-  .upload-area { background: #1e293b; border: 2px dashed #334155; border-radius: 12px; padding: 40px; text-align: center; cursor: pointer; margin-bottom: 20px; transition: all 0.2s; }
-  .upload-area:hover,.upload-area.dragover { border-color: #38bdf8; background: #1e293b80; }
-  .upload-area img { max-height: 200px; border-radius: 8px; margin-top: 15px; }
+   .subtitle { color: #94a3b8; margin-bottom: 30px; }
+   .upload-area { background: #1e293b; border: 2px dashed #334155; border-radius: 12px; padding: 40px; text-align: center; cursor: pointer; margin-bottom: 20px; transition: all 0.2s; }
+   .upload-area:hover,.upload-area.dragover { border-color: #38bdf8; background: #1e293b80; }
+   .upload-area img { max-height: 200px; border-radius: 8px; margin-top: 15px; }
     input[type="file"] { display: none; }
-  .btn { background: #0ea5e9; color: #0f172a; border: none; padding: 12px 24px; border-radius: 8px; font-weight: 600; cursor: pointer; font-size: 1rem; }
-  .btn:hover { background: #38bdf8; }
-  .btn:disabled { background: #334155; color: #64748b; cursor: not-allowed; }
-  .btn.secondary { background: #334155; color: #e2e8f0; }
-  .controls { margin: 20px 0; display: flex; gap: 15px; align-items: center; flex-wrap: wrap; }
-  .control-group { display: flex; flex-direction: column; gap: 8px; }
-  .control-group label { font-size: 0.9rem; color: #94a3b8; }
-   select { background: #1e293b; border: 1px solid #334155; color: #e2e8f0; padding: 10px 14px; border-radius: 8px; }
-  .progress { background: #1e293b; border-radius: 8px; padding: 20px; margin: 20px 0; display: none; }
-  .progress-bar { background: #334155; height: 8px; border-radius: 4px; overflow: hidden; margin-top: 10px; }
-  .progress-fill { background: linear-gradient(90deg, #38bdf8, #818cf8); height: 100%; width: 0%; transition: width 0.3s; }
-  .result { background: #1e293b; border: 1px solid #334155; border-radius: 8px; padding: 20px; margin: 20px 0; display: none; }
-  .result-actions { display: flex; gap: 10px; margin-bottom: 15px; flex-wrap: wrap; }
-  .table-preview { background: #fff; border: 2px solid #d1d5db; border-radius: 6px; overflow: auto; max-height: 500px; }
+   .btn { background: #0ea5e9; color: #0f172a; border: none; padding: 12px 24px; border-radius: 8px; font-weight: 600; cursor: pointer; font-size: 1rem; }
+   .btn:hover { background: #38bdf8; }
+   .btn:disabled { background: #334155; color: #64748b; cursor: not-allowed; }
+   .btn.secondary { background: #334155; color: #e2e8f0; }
+   .controls { margin: 20px 0; display: flex; gap: 15px; align-items: center; flex-wrap: wrap; }
+   .control-group { display: flex; flex-direction: column; gap: 8px; }
+   .control-group label { font-size: 0.9rem; color: #94a3b8; }
+    select { background: #1e293b; border: 1px solid #334155; color: #e2e8f0; padding: 10px 14px; border-radius: 8px; }
+   .progress { background: #1e293b; border-radius: 8px; padding: 20px; margin: 20px 0; display: none; }
+   .progress-bar { background: #334155; height: 8px; border-radius: 4px; overflow: hidden; margin-top: 10px; }
+   .progress-fill { background: linear-gradient(90deg, #38bdf8, #818cf8); height: 100%; width: 0%; transition: width 0.3s; }
+   .result { background: #1e293b; border: 1px solid #334155; border-radius: 8px; padding: 20px; margin: 20px 0; display: none; }
+   .result-actions { display: flex; gap: 10px; margin-bottom: 15px; flex-wrap: wrap; }
+   .table-preview { background: #fff; border: 2px solid #d1d5db; border-radius: 6px; overflow: auto; max-height: 500px; }
     table { width: 100%; border-collapse: collapse; font-size: 0.875rem; font-family: 'Segoe UI', sans-serif; }
     td { padding: 6px 10px; border: 1px solid #d1d5db; text-align: left; color: #111827; background: #fff; }
     td.editable { cursor: text; }
     td.editable:focus { outline: 2px solid #38bdf8; background: #e0f2fe; }
-  .tip { background: #1e293b; border-left: 3px solid #22c55e; padding: 12px 16px; margin: 20px 0; border-radius: 4px; font-size: 0.9rem; }
-  .status { color: #64748b; font-size: 0.9rem; }
-  .toast { position: fixed; bottom: 30px; left: 50%; transform: translateX(-50%) translateY(100px); background: #1e293b; border: 1px solid #38bdf8; color: #e2e8f0; padding: 14px 24px; border-radius: 8px; opacity: 0; transition: all 0.3s ease; z-index: 1000; }
-  .toast.show { transform: translateX(-50%) translateY(0); opacity: 1; }
+   .tip { background: #1e293b; border-left: 3px solid #22c55e; padding: 12px 16px; margin: 20px 0; border-radius: 4px; font-size: 0.9rem; }
+   .status { color: #64748b; font-size: 0.9rem; }
+   .toast { position: fixed; bottom: 30px; left: 50%; transform: translateX(-50%) translateY(100px); background: #1e293b; border: 1px solid #38bdf8; color: #e2e8f0; padding: 14px 24px; border-radius: 8px; opacity: 0; transition: all 0.3s ease; z-index: 1000; }
+   .toast.show { transform: translateX(-50%) translateY(0); opacity: 1; }
   </style>
 </head>
 <body>
@@ -62,9 +63,9 @@
         <label>Language:</label>
         <select id="langSelect">
           <option value="en">English</option>
-          <option value="ch">English + Chinese</option>
-          <option value="en+hi">English + Hindi</option>
-          <option value="en+te">English + Telugu</option>
+          <option value="ch">Chinese + English</option>
+          <option value="hi">Hindi</option>
+          <option value="te">Telugu</option>
         </select>
       </div>
       <button class="btn" id="extractBtn" disabled>Convert to Excel</button>
@@ -91,16 +92,24 @@ let selectedImageBlob = null;
 let extractedTableData = [];
 let ocr = null;
 
-// Load PaddleOCR with table detection
-paddleocr.load().then(model => {
-  ocr = model;
-  document.getElementById('modelStatus').textContent = 'Ready';
-  document.getElementById('modelStatus').style.color = '#22c55e';
-  if (selectedImageBlob) document.getElementById('extractBtn').disabled = false;
-}).catch(() => {
-  document.getElementById('modelStatus').textContent = 'Model failed. Refresh page.';
-  document.getElementById('modelStatus').style.color = '#f87171';
-});
+// Fixed: Use correct global name and init
+window.onload = async () => {
+  try {
+    // PaddleOCR.js exposes window.PaddleOCR
+    ocr = await window.PaddleOCR.init({
+      detPath: 'https://cdn.jsdelivr.net/npm/@paddle-js-models/ocr@1.3.0/models/ch_PP-OCRv4_det_infer.onnx',
+      recPath: 'https://cdn.jsdelivr.net/npm/@paddle-js-models/ocr@1.3.0/models/ch_PP-OCRv4_rec_infer.onnx',
+      tablePath: 'https://cdn.jsdelivr.net/npm/@paddle-js-models/ocr@1.3.0/models/ch_ppstructure_mobile_v2.0_SLANet.onnx'
+    });
+    document.getElementById('modelStatus').textContent = 'Ready';
+    document.getElementById('modelStatus').style.color = '#22c55e';
+    if (selectedImageBlob) document.getElementById('extractBtn').disabled = false;
+  } catch (e) {
+    document.getElementById('modelStatus').textContent = 'Model failed to load. Check internet.';
+    document.getElementById('modelStatus').style.color = '#f87171';
+    console.error(e);
+  }
+};
 
 // Paste support - works anywhere on page
 window.addEventListener('paste', e => {
@@ -163,6 +172,7 @@ document.getElementById('extractBtn').onclick = async () => {
   } catch (err) {
     showToast('Failed: ' + err.message);
     document.getElementById('progress').style.display = 'none';
+    console.error(err);
   }
   document.getElementById('extractBtn').disabled = false;
 };
@@ -173,7 +183,6 @@ function renderTable() {
     preview.innerHTML = '<p style="padding:20px;color:#6b7280">No table data detected</p>';
     return;
   }
-
   let html = '<table><tbody>';
   extractedTableData.forEach((row, r) => {
     html += '<tr>';
