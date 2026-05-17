@@ -70,7 +70,44 @@
 .btn:disabled { background: #334155; color: #64748b; cursor: not-allowed; }
 
 .controls { margin: 20px 0; display: flex; gap: 15px; flex-wrap: wrap; align-items: center; }
-    select { background: #1e293b; border: 1px solid #334155; color: #e2e8f0; padding: 10px 14px; border-radius: 8px; }
+
+.lang-select-wrapper {
+      position: relative;
+      min-width: 280px;
+    }
+.lang-select-wrapper input {
+      width: 100%;
+      background: #1e293b;
+      border: 1px solid #334155;
+      color: #e2e8f0;
+      padding: 10px 14px;
+      border-radius: 8px;
+      font-size: 1rem;
+    }
+.lang-select-wrapper input:focus { outline: none; border-color: #38bdf8; }
+.lang-dropdown {
+      position: absolute;
+      top: 100%;
+      left: 0;
+      right: 0;
+      background: #1e293b;
+      border: 1px solid #334155;
+      border-top: none;
+      border-radius: 0 0 8px 8px;
+      max-height: 300px;
+      overflow-y: auto;
+      z-index: 100;
+      display: none;
+    }
+.lang-dropdown.show { display: block; }
+.lang-option {
+      padding: 10px 14px;
+      cursor: pointer;
+      transition: background 0.1s;
+    }
+.lang-option:hover { background: #334155; }
+.lang-option.selected { background: #0ea5e9; color: #0f172a; }
+
 .checkbox { display: flex; align-items: center; gap: 8px; }
 .checkbox input { width: 18px; height: 18px; }
 
@@ -164,7 +201,7 @@
   <div class="container">
     <a href="/" class="back">← Back to ToolNest</a>
     <h1>OCR Pro</h1>
-    <p class="subtitle">High accuracy text extraction with image preprocessing</p>
+    <p class="subtitle">Extract text from images in 100+ languages</p>
 
     <div class="tabs">
       <button class="tab active" data-tab="upload">Upload File</button>
@@ -191,15 +228,10 @@
 
     <div class="controls">
       <label>Language:</label>
-      <select id="langSelect">
-        <option value="eng+tel">English + Telugu</option>
-        <option value="eng">English</option>
-        <option value="tel">Telugu</option>
-        <option value="hin">Hindi</option>
-        <option value="eng+hin">English + Hindi</option>
-        <option value="tam">Tamil</option>
-        <option value="kan">Kannada</option>
-      </select>
+      <div class="lang-select-wrapper">
+        <input type="text" id="langSearch" placeholder="Search language..." value="English">
+        <div class="lang-dropdown" id="langDropdown"></div>
+      </div>
 
       <div class="checkbox">
         <input type="checkbox" id="preprocess" checked>
@@ -241,6 +273,119 @@
   <script>
     let selectedImageBlob = null;
     let processedImageBlob = null;
+    let currentLang = 'eng';
+
+    const LANGUAGES = [
+      { code: 'afr', name: 'Afrikaans' },
+      { code: 'amh', name: 'Amharic' },
+      { code: 'ara', name: 'Arabic' },
+      { code: 'asm', name: 'Assamese' },
+      { code: 'aze', name: 'Azerbaijani' },
+      { code: 'aze_cyrl', name: 'Azerbaijani Cyrillic' },
+      { code: 'bel', name: 'Belarusian' },
+      { code: 'ben', name: 'Bengali' },
+      { code: 'bod', name: 'Tibetan' },
+      { code: 'bos', name: 'Bosnian' },
+      { code: 'bul', name: 'Bulgarian' },
+      { code: 'cat', name: 'Catalan' },
+      { code: 'ceb', name: 'Cebuano' },
+      { code: 'ces', name: 'Czech' },
+      { code: 'chi_sim', name: 'Chinese Simplified' },
+      { code: 'chi_tra', name: 'Chinese Traditional' },
+      { code: 'chr', name: 'Cherokee' },
+      { code: 'cym', name: 'Welsh' },
+      { code: 'dan', name: 'Danish' },
+      { code: 'deu', name: 'German' },
+      { code: 'dzo', name: 'Dzongkha' },
+      { code: 'ell', name: 'Greek' },
+      { code: 'eng', name: 'English' },
+      { code: 'enm', name: 'Middle English' },
+      { code: 'epo', name: 'Esperanto' },
+      { code: 'est', name: 'Estonian' },
+      { code: 'eus', name: 'Basque' },
+      { code: 'fas', name: 'Persian' },
+      { code: 'fin', name: 'Finnish' },
+      { code: 'fra', name: 'French' },
+      { code: 'frk', name: 'Frankish' },
+      { code: 'frm', name: 'Middle French' },
+      { code: 'gle', name: 'Irish' },
+      { code: 'glg', name: 'Galician' },
+      { code: 'grc', name: 'Ancient Greek' },
+      { code: 'guj', name: 'Gujarati' },
+      { code: 'hat', name: 'Haitian Creole' },
+      { code: 'heb', name: 'Hebrew' },
+      { code: 'hin', name: 'Hindi' },
+      { code: 'hrv', name: 'Croatian' },
+      { code: 'hun', name: 'Hungarian' },
+      { code: 'iku', name: 'Inuktitut' },
+      { code: 'ind', name: 'Indonesian' },
+      { code: 'isl', name: 'Icelandic' },
+      { code: 'ita', name: 'Italian' },
+      { code: 'ita_old', name: 'Old Italian' },
+      { code: 'jav', name: 'Javanese' },
+      { code: 'jpn', name: 'Japanese' },
+      { code: 'kan', name: 'Kannada' },
+      { code: 'kat', name: 'Georgian' },
+      { code: 'kat_old', name: 'Old Georgian' },
+      { code: 'kaz', name: 'Kazakh' },
+      { code: 'khm', name: 'Khmer' },
+      { code: 'kir', name: 'Kyrgyz' },
+      { code: 'kor', name: 'Korean' },
+      { code: 'kur', name: 'Kurdish' },
+      { code: 'lao', name: 'Lao' },
+      { code: 'lat', name: 'Latin' },
+      { code: 'lav', name: 'Latvian' },
+      { code: 'lit', name: 'Lithuanian' },
+      { code: 'mal', name: 'Malayalam' },
+      { code: 'mar', name: 'Marathi' },
+      { code: 'mkd', name: 'Macedonian' },
+      { code: 'mlt', name: 'Maltese' },
+      { code: 'mon', name: 'Mongolian' },
+      { code: 'mri', name: 'Maori' },
+      { code: 'msa', name: 'Malay' },
+      { code: 'mya', name: 'Burmese' },
+      { code: 'nep', name: 'Nepali' },
+      { code: 'nld', name: 'Dutch' },
+      { code: 'nor', name: 'Norwegian' },
+      { code: 'ori', name: 'Oriya' },
+      { code: 'pan', name: 'Punjabi' },
+      { code: 'pol', name: 'Polish' },
+      { code: 'por', name: 'Portuguese' },
+      { code: 'pus', name: 'Pashto' },
+      { code: 'ron', name: 'Romanian' },
+      { code: 'rus', name: 'Russian' },
+      { code: 'san', name: 'Sanskrit' },
+      { code: 'sin', name: 'Sinhala' },
+      { code: 'slk', name: 'Slovak' },
+      { code: 'slv', name: 'Slovenian' },
+      { code: 'spa', name: 'Spanish' },
+      { code: 'spa_old', name: 'Old Spanish' },
+      { code: 'sqi', name: 'Albanian' },
+      { code: 'srp', name: 'Serbian' },
+      { code: 'srp_latn', name: 'Serbian Latin' },
+      { code: 'swa', name: 'Swahili' },
+      { code: 'swe', name: 'Swedish' },
+      { code: 'syr', name: 'Syriac' },
+      { code: 'tam', name: 'Tamil' },
+      { code: 'tel', name: 'Telugu' },
+      { code: 'tgk', name: 'Tajik' },
+      { code: 'tgl', name: 'Tagalog' },
+      { code: 'tha', name: 'Thai' },
+      { code: 'tir', name: 'Tigrinya' },
+      { code: 'tur', name: 'Turkish' },
+      { code: 'uig', name: 'Uyghur' },
+      { code: 'ukr', name: 'Ukrainian' },
+      { code: 'urd', name: 'Urdu' },
+      { code: 'uzb', name: 'Uzbek' },
+      { code: 'uzb_cyrl', name: 'Uzbek Cyrillic' },
+      { code: 'vie', name: 'Vietnamese' },
+      { code: 'yid', name: 'Yiddish' },
+      { code: 'eng+tel', name: 'English + Telugu' },
+      { code: 'eng+hin', name: 'English + Hindi' },
+      { code: 'eng+tam', name: 'English + Tamil' },
+      { code: 'eng+kan', name: 'English + Kannada' },
+      { code: 'eng+tel+hin', name: 'English + Telugu + Hindi' },
+    ];
 
     // Tab switching
     document.querySelectorAll('.tab').forEach(tab => {
@@ -251,6 +396,46 @@
         document.getElementById(tab.dataset.tab + '-tab').classList.add('active');
         resetState();
       };
+    });
+
+    // Language search dropdown
+    const langSearch = document.getElementById('langSearch');
+    const langDropdown = document.getElementById('langDropdown');
+
+    function renderLangOptions(filter = '') {
+      langDropdown.innerHTML = '';
+      const filtered = LANGUAGES.filter(l =>
+        l.name.toLowerCase().includes(filter.toLowerCase()) ||
+        l.code.toLowerCase().includes(filter.toLowerCase())
+      );
+      filtered.forEach(lang => {
+        const div = document.createElement('div');
+        div.className = 'lang-option';
+        if (lang.code === currentLang) div.classList.add('selected');
+        div.textContent = lang.name;
+        div.onclick = () => {
+          currentLang = lang.code;
+          langSearch.value = lang.name;
+          langDropdown.classList.remove('show');
+        };
+        langDropdown.appendChild(div);
+      });
+    }
+
+    langSearch.onfocus = () => {
+      renderLangOptions(langSearch.value);
+      langDropdown.classList.add('show');
+    };
+
+    langSearch.oninput = () => {
+      renderLangOptions(langSearch.value);
+      langDropdown.classList.add('show');
+    };
+
+    document.addEventListener('click', (e) => {
+      if (!e.target.closest('.lang-select-wrapper')) {
+        langDropdown.classList.remove('show');
+      }
     });
 
     function resetState() {
@@ -391,7 +576,6 @@
     // OCR
     document.getElementById('extractBtn').onclick = async () => {
       if (!processedImageBlob) return;
-      const lang = document.getElementById('langSelect').value;
       document.getElementById('extractBtn').disabled = true;
       document.getElementById('progress').style.display = 'block';
       document.getElementById('result').style.display = 'none';
@@ -399,7 +583,7 @@
       try {
         const { data: { text } } = await Tesseract.recognize(
           processedImageBlob,
-          lang,
+          currentLang,
           {
             logger: m => {
               if (m.status === 'recognizing text') {
@@ -473,6 +657,9 @@
         setTimeout(() => toast.remove(), 300);
       }, 2500);
     }
+
+    // Init
+    renderLangOptions();
   </script>
 </body>
 </html>
