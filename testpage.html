@@ -1,23 +1,109 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+
+<title>Table Image to Excel</title>
+
+<script src="https://cdn.tailwindcss.com"></script>
+
+<script async src="https://docs.opencv.org/4.x/opencv.js"></script>
+
+<script src="https://cdn.jsdelivr.net/npm/tesseract.js@5/dist/tesseract.min.js"></script>
+
+<script src="https://cdn.sheetjs.com/xlsx-0.20.2/package/dist/xlsx.full.min.js"></script>
+
+<style>
+body{
+    background:#0f172a;
+    color:white;
+    font-family:Arial;
+}
+
+table{
+    border-collapse:collapse;
+    width:100%;
+}
+
+td,th{
+    border:1px solid #334155;
+    padding:6px;
+}
+
+canvas{
+    max-width:100%;
+}
+
+#logs{
+    background:black;
+    color:#22c55e;
+    height:250px;
+    overflow:auto;
+    padding:12px;
+    border-radius:12px;
+    font-family:monospace;
+    font-size:13px;
+}
+</style>
+</head>
+<body class="p-6">
+
+<div class="max-w-7xl mx-auto">
+
+<h1 class="text-4xl font-bold mb-2">
+📊 Table Image → Excel
+</h1>
+
+<p class="text-slate-400 mb-6">
+Runs fully locally in your browser.
+</p>
+
+<input
+type="file"
+id="fileInput"
+accept="image/*"
+class="mb-5 block">
+
+<div class="grid md:grid-cols-2 gap-6">
+
+<div>
+<h2 class="text-2xl mb-3">Original</h2>
+
+<img
+id="preview"
+class="rounded-xl">
+</div>
+
+<div>
+<h2 class="text-2xl mb-3">Detected Table</h2>
+
+<canvas id="canvas"></canvas>
+</div>
+
+</div>
+
 <div class="mt-6 flex flex-wrap gap-4 items-center">
 
-<button id="extractBtn"
+<button
+id="extractBtn"
 class="bg-sky-500 px-6 py-3 rounded-xl">
 Extract
 </button>
 
-<button id="downloadBtn"
+<button
+id="downloadBtn"
 class="bg-emerald-500 px-6 py-3 rounded-xl">
 Download Excel
 </button>
 
-<label class="flex items-center gap-2 ml-4">
+<label class="flex items-center gap-2">
 
 <input
 type="checkbox"
 id="tableOnlyToggle"
 checked
-class="w-5 h-5"
-/>
+class="w-5 h-5">
 
 <span>Table Only Mode</span>
 
@@ -25,17 +111,434 @@ class="w-5 h-5"
 
 </div>
 
-<!-- Logs -->
+<p
+id="status"
+class="mt-5 text-sky-400">
+</p>
 
 <div class="mt-6">
 
 <h2 class="text-xl mb-2 font-semibold">
-Live Processing Logs
+Live Logs
 </h2>
 
-<div
-id="logs"
-class="bg-black text-green-400 rounded-xl p-4 h-64 overflow-auto text-sm font-mono"
-></div>
+<div id="logs"></div>
 
 </div>
+
+<div class="mt-8 overflow-auto">
+
+<table id="tableOutput"></table>
+
+</div>
+
+</div>
+
+<script>
+
+let uploadedFile = null;
+let extractedTable = [];
+
+const fileInput =
+document.getElementById('fileInput');
+
+const preview =
+document.getElementById('preview');
+
+const canvas =
+document.getElementById('canvas');
+
+const ctx =
+canvas.getContext('2d');
+
+const statusText =
+document.getElementById('status');
+
+const tableOutput =
+document.getElementById('tableOutput');
+
+const logs =
+document.getElementById('logs');
+
+function setStatus(text){
+    statusText.innerText = text;
+}
+
+function log(message){
+
+    const time =
+    new Date().toLocaleTimeString();
+
+    logs.innerHTML +=
+    `[${time}] ${message}<br>`;
+
+    logs.scrollTop =
+    logs.scrollHeight;
+}
+
+fileInput.addEventListener('change', e => {
+
+    uploadedFile = e.target.files[0];
+
+    if(!uploadedFile) return;
+
+    const reader = new FileReader();
+
+    reader.onload = ev => {
+
+        preview.src =
+        ev.target.result;
+
+        log('Image uploaded');
+    };
+
+    reader.readAsDataURL(uploadedFile);
+});
+
+document
+.getElementById('extractBtn')
+.addEventListener('click', async ()=>{
+
+    if(!uploadedFile){
+
+        alert('Upload image first');
+
+        return;
+    }
+
+    logs.innerHTML = '';
+
+    setStatus('Loading image...');
+    log('Loading image');
+
+    const img = new Image();
+
+    img.src =
+    URL.createObjectURL(uploadedFile);
+
+    img.onload = async ()=>{
+
+        canvas.width = img.width;
+        canvas.height = img.height;
+
+        ctx.drawImage(img,0,0);
+
+        log('Image rendered to canvas');
+
+        let src = cv.imread(canvas);
+
+        let gray = new cv.Mat();
+
+        cv.cvtColor(
+            src,
+            gray,
+            cv.COLOR_RGBA2GRAY
+        );
+
+        log('Converted to grayscale');
+
+        let binary = new cv.Mat();
+
+        cv.threshold(
+            gray,
+            binary,
+            150,
+            255,
+            cv.THRESH_BINARY_INV
+        );
+
+        log('Threshold applied');
+
+        let contours =
+        new cv.MatVector();
+
+        let hierarchy =
+        new cv.Mat();
+
+        cv.findContours(
+            binary,
+            contours,
+            hierarchy,
+            cv.RETR_TREE,
+            cv.CHAIN_APPROX_SIMPLE
+        );
+
+        log(
+        `${contours.size()} contours found`
+        );
+
+        let cells = [];
+
+        const tableOnly =
+        document
+        .getElementById(
+            'tableOnlyToggle'
+        ).checked;
+
+        for(let i=0;i<contours.size();i++){
+
+            let cnt =
+            contours.get(i);
+
+            let rect =
+            cv.boundingRect(cnt);
+
+            const validSize =
+                rect.width > 40 &&
+                rect.height > 20;
+
+            const aspect =
+                rect.width / rect.height;
+
+            const looksLikeCell =
+                aspect > 0.8 &&
+                aspect < 12;
+
+            if(
+                validSize &&
+                (
+                    !tableOnly ||
+                    looksLikeCell
+                )
+            ){
+
+                cells.push(rect);
+
+                cv.rectangle(
+                    src,
+                    new cv.Point(
+                        rect.x,
+                        rect.y
+                    ),
+                    new cv.Point(
+                        rect.x + rect.width,
+                        rect.y + rect.height
+                    ),
+                    [0,255,0,255],
+                    2
+                );
+
+                log(
+                `Cell:
+x=${rect.x}
+y=${rect.y}
+w=${rect.width}
+h=${rect.height}`
+                );
+            }
+        }
+
+        cv.imshow(canvas,src);
+
+        setStatus('Sorting cells...');
+        log(`${cells.length} valid cells`);
+
+        cells.sort((a,b)=>{
+
+            if(
+                Math.abs(a.y-b.y) < 10
+            ){
+                return a.x - b.x;
+            }
+
+            return a.y - b.y;
+        });
+
+        let rows = [];
+        let currentRow = [];
+        let lastY = -1;
+
+        cells.forEach(cell=>{
+
+            if(
+                lastY === -1 ||
+                Math.abs(
+                    cell.y-lastY
+                ) < 15
+            ){
+
+                currentRow.push(cell);
+
+            }else{
+
+                rows.push(currentRow);
+
+                currentRow = [cell];
+            }
+
+            lastY = cell.y;
+        });
+
+        if(currentRow.length){
+            rows.push(currentRow);
+        }
+
+        log(`${rows.length} rows detected`);
+
+        setStatus('Running OCR...');
+
+        extractedTable = [];
+
+        for(let r=0;r<rows.length;r++){
+
+            let rowData = [];
+
+            rows[r].sort(
+                (a,b)=>a.x-b.x
+            );
+
+            for(
+                let c=0;
+                c<rows[r].length;
+                c++
+            ){
+
+                await new Promise(
+                    r=>setTimeout(r,10)
+                );
+
+                let rect =
+                rows[r][c];
+
+                log(
+                `OCR row ${r+1}
+cell ${c+1}`
+                );
+
+                let roi =
+                src.roi(rect);
+
+                let tempCanvas =
+                document
+                .createElement(
+                    'canvas'
+                );
+
+                cv.imshow(
+                    tempCanvas,
+                    roi
+                );
+
+                const {
+                    data:{text}
+                } =
+                await Tesseract
+                .recognize(
+                    tempCanvas,
+                    'eng',
+                    {
+                        logger:m=>{
+
+                            if(m.status){
+
+                                setStatus(
+                                `${m.status}
+${Math.round(
+(m.progress||0)*100
+)}%`
+                                );
+                            }
+                        }
+                    }
+                );
+
+                rowData.push(
+                    text.trim()
+                );
+
+                log(
+                `Extracted:
+"${text.trim()}"`
+                );
+
+                roi.delete();
+            }
+
+            extractedTable.push(
+                rowData
+            );
+        }
+
+        renderTable(
+            extractedTable
+        );
+
+        log(
+        'Excel-ready table generated'
+        );
+
+        setStatus('Done ✅');
+
+        src.delete();
+        gray.delete();
+        binary.delete();
+        contours.delete();
+        hierarchy.delete();
+    };
+});
+
+function renderTable(data){
+
+    tableOutput.innerHTML = '';
+
+    data.forEach(
+    (row,rowIndex)=>{
+
+        const tr =
+        document.createElement('tr');
+
+        row.forEach(cell=>{
+
+            const td =
+            document.createElement(
+                rowIndex===0
+                ? 'th'
+                : 'td'
+            );
+
+            td.innerText = cell;
+
+            tr.appendChild(td);
+        });
+
+        tableOutput.appendChild(tr);
+    });
+}
+
+document
+.getElementById('downloadBtn')
+.addEventListener('click',()=>{
+
+    if(!extractedTable.length){
+
+        alert('No data');
+
+        return;
+    }
+
+    const ws =
+    XLSX.utils.aoa_to_sheet(
+        extractedTable
+    );
+
+    const wb =
+    XLSX.utils.book_new();
+
+    XLSX.utils.book_append_sheet(
+        wb,
+        ws,
+        'Sheet1'
+    );
+
+    XLSX.writeFile(
+        wb,
+        'table.xlsx'
+    );
+
+    log('Excel downloaded');
+});
+
+</script>
+
+</body>
+</html>
