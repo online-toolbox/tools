@@ -1,17 +1,14 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-<meta charset="UTF-8" />
-<meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
 
 <title>Table Image → Excel</title>
 
 <script src="https://cdn.tailwindcss.com"></script>
-
 <script async src="https://docs.opencv.org/4.x/opencv.js"></script>
-
 <script src="https://cdn.jsdelivr.net/npm/tesseract.js@5/dist/tesseract.min.js"></script>
-
 <script src="https://cdn.sheetjs.com/xlsx-0.20.2/package/dist/xlsx.full.min.js"></script>
 
 <style>
@@ -37,7 +34,6 @@ body{
     height:38px;
     padding:6px 10px;
     outline:none;
-    position:relative;
 }
 
 .excel-table th{
@@ -67,10 +63,12 @@ body{
 canvas{
     max-width:100%;
     border-radius:12px;
+    background:white;
 }
 
 </style>
 </head>
+
 <body class="p-6">
 
 <div class="max-w-7xl mx-auto">
@@ -93,6 +91,7 @@ class="mb-5"
 <div class="grid md:grid-cols-2 gap-6">
 
 <div>
+
 <h2 class="text-2xl mb-3">
 Original
 </h2>
@@ -101,14 +100,17 @@ Original
 id="preview"
 class="rounded-xl"
 />
+
 </div>
 
 <div>
+
 <h2 class="text-2xl mb-3">
-Detected Table
+Detected Grid
 </h2>
 
 <canvas id="canvas"></canvas>
+
 </div>
 
 </div>
@@ -226,9 +228,11 @@ document
 
         ctx.drawImage(img,0,0);
 
-        let src = cv.imread(canvas);
+        let src =
+        cv.imread(canvas);
 
-        let gray = new cv.Mat();
+        let gray =
+        new cv.Mat();
 
         cv.cvtColor(
             src,
@@ -236,86 +240,31 @@ document
             cv.COLOR_RGBA2GRAY
         );
 
-        let binary = new cv.Mat();
+        // Better thresholding
+
+        let binary =
+        new cv.Mat();
 
         cv.adaptiveThreshold(
             gray,
             binary,
             255,
             cv.ADAPTIVE_THRESH_GAUSSIAN_C,
-            cv.THRESH_BINARY_INV,
+            cv.THRESH_BINARY,
             15,
-            8
+            5
         );
 
-        setLog('Detecting table structure');
-
-        let horizontal =
-        binary.clone();
-
-        let vertical =
-        binary.clone();
-
-        let horizontalSize =
-        Math.floor(
-            horizontal.cols / 20
+        cv.bitwise_not(
+            binary,
+            binary
         );
 
-        let verticalSize =
-        Math.floor(
-            vertical.rows / 20
+        setLog(
+        'Detecting table cells'
         );
 
-        let horizontalStructure =
-        cv.getStructuringElement(
-            cv.MORPH_RECT,
-            new cv.Size(
-                horizontalSize,
-                1
-            )
-        );
-
-        let verticalStructure =
-        cv.getStructuringElement(
-            cv.MORPH_RECT,
-            new cv.Size(
-                1,
-                verticalSize
-            )
-        );
-
-        cv.erode(
-            horizontal,
-            horizontal,
-            horizontalStructure
-        );
-
-        cv.dilate(
-            horizontal,
-            horizontal,
-            horizontalStructure
-        );
-
-        cv.erode(
-            vertical,
-            vertical,
-            verticalStructure
-        );
-
-        cv.dilate(
-            vertical,
-            vertical,
-            verticalStructure
-        );
-
-        let mask =
-        new cv.Mat();
-
-        cv.add(
-            horizontal,
-            vertical,
-            mask
-        );
+        // Find contours directly
 
         let contours =
         new cv.MatVector();
@@ -324,7 +273,7 @@ document
         new cv.Mat();
 
         cv.findContours(
-            mask,
+            binary,
             contours,
             hierarchy,
             cv.RETR_TREE,
@@ -333,20 +282,24 @@ document
 
         let cells = [];
 
-        for(let i=0;i<contours.size();i++){
+        for(
+            let i=0;
+            i<contours.size();
+            i++
+        ){
 
             let rect =
             cv.boundingRect(
                 contours.get(i)
             );
 
-            // aggressive filtering
+            // Better filtering
 
             const valid =
-                rect.width > 60 &&
-                rect.height > 25 &&
-                rect.width < canvas.width*0.9 &&
-                rect.height < 120;
+                rect.width > 50 &&
+                rect.height > 20 &&
+                rect.width < canvas.width*0.95 &&
+                rect.height < 150;
 
             if(valid){
 
@@ -370,12 +323,25 @@ document
 
         cv.imshow(canvas,src);
 
-        setLog('Organizing rows');
+        if(cells.length === 0){
+
+            setLog(
+            'No table cells detected'
+            );
+
+            return;
+        }
+
+        setLog(
+        `Detected ${cells.length} cells`
+        );
+
+        // Sort cells
 
         cells.sort((a,b)=>{
 
             if(
-                Math.abs(a.y-b.y) < 10
+                Math.abs(a.y-b.y)<15
             ){
                 return a.x-b.x;
             }
@@ -392,7 +358,9 @@ document
 
             if(
                 lastY === -1 ||
-                Math.abs(cell.y-lastY)<15
+                Math.abs(
+                    cell.y-lastY
+                ) < 20
             ){
 
                 currentRow.push(cell);
@@ -408,14 +376,21 @@ document
         });
 
         if(currentRow.length){
+
             rows.push(currentRow);
         }
 
         extractedTable = [];
 
-        setLog('Extracting text');
+        setLog(
+        'Extracting text from table'
+        );
 
-        for(let r=0;r<rows.length;r++){
+        for(
+            let r=0;
+            r<rows.length;
+            r++
+        ){
 
             let rowData = [];
 
@@ -423,7 +398,11 @@ document
                 (a,b)=>a.x-b.x
             );
 
-            for(let c=0;c<rows[r].length;c++){
+            for(
+                let c=0;
+                c<rows[r].length;
+                c++
+            ){
 
                 await new Promise(
                     r=>setTimeout(r,10)
@@ -453,26 +432,39 @@ document
                     'eng'
                 );
 
-                rowData.push(
-                    text.trim()
-                );
+                let cleaned =
+                text
+                .replace(/\n/g,' ')
+                .trim();
+
+                rowData.push(cleaned);
 
                 roi.delete();
             }
 
-            extractedTable.push(rowData);
+            // Ignore empty rows
+
+            if(
+                rowData.some(
+                    x=>x.trim()!==''
+                )
+            ){
+
+                extractedTable.push(
+                    rowData
+                );
+            }
         }
 
         renderTable();
 
-        setLog('Table ready for editing');
+        setLog(
+        'Table ready for editing'
+        );
 
         src.delete();
         gray.delete();
         binary.delete();
-        horizontal.delete();
-        vertical.delete();
-        mask.delete();
         contours.delete();
         hierarchy.delete();
     };
@@ -480,7 +472,7 @@ document
 
 function renderTable(){
 
-    tableOutput.innerHTML = '';
+    tableOutput.innerHTML='';
 
     extractedTable.forEach(
     (row,rowIndex)=>{
@@ -498,23 +490,21 @@ function renderTable(){
                 : 'td'
             );
 
-            td.contentEditable = true;
+            td.contentEditable =
+            true;
 
-            td.innerText = cell;
-
-            td.dataset.row =
-            rowIndex;
-
-            td.dataset.col =
-            colIndex;
+            td.innerText =
+            cell;
 
             td.addEventListener(
                 'input',
                 ()=>{
+
                     extractedTable
                     [rowIndex]
                     [colIndex]
-                    = td.innerText;
+                    =
+                    td.innerText;
                 }
             );
 
@@ -556,7 +546,9 @@ document
 .getElementById('mergeBtn')
 .addEventListener('click', ()=>{
 
-    if(selectedCells.length < 2){
+    if(
+        selectedCells.length < 2
+    ){
 
         alert(
         'Select at least 2 cells'
@@ -571,20 +563,19 @@ document
     first.colSpan =
     selectedCells.length;
 
-    let mergedText =
+    first.innerText =
     selectedCells
     .map(
         c=>c.innerText
     )
     .join(' ');
 
-    first.innerText =
-    mergedText;
-
-    for(let i=1;i<
-        selectedCells.length;
+    for(
+        let i=1;
+        i<selectedCells.length;
         i++
     ){
+
         selectedCells[i].remove();
     }
 
@@ -596,7 +587,9 @@ document
 
     selectedCells=[];
 
-    setLog('Cells merged');
+    setLog(
+    'Cells merged'
+    );
 });
 
 document
@@ -606,11 +599,13 @@ document
     let finalData = [];
 
     const rows =
-    tableOutput.querySelectorAll('tr');
+    tableOutput.querySelectorAll(
+        'tr'
+    );
 
     rows.forEach(row=>{
 
-        let rowData = [];
+        let rowData=[];
 
         row.querySelectorAll(
             'th,td'
@@ -621,7 +616,9 @@ document
             );
         });
 
-        finalData.push(rowData);
+        finalData.push(
+            rowData
+        );
     });
 
     const ws =
@@ -643,7 +640,9 @@ document
         'table.xlsx'
     );
 
-    setLog('Excel file downloaded');
+    setLog(
+    'Excel file downloaded'
+    );
 });
 
 </script>
