@@ -4,7 +4,7 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 
-<title>Table Image → Excel</title>
+<title>Table Image → Excel (Improved)</title>
 
 <script src="https://cdn.tailwindcss.com"></script>
 <script async src="https://docs.opencv.org/4.x/opencv.js"></script>
@@ -12,638 +12,252 @@
 <script src="https://cdn.sheetjs.com/xlsx-0.20.2/package/dist/xlsx.full.min.js"></script>
 
 <style>
-
 body{
-    background:#111827;
+    background:#0f172a;
     color:white;
     font-family:Arial;
 }
 
-.excel-table{
+table{
     border-collapse:collapse;
     background:white;
     color:black;
-    width:max-content;
-    min-width:100%;
 }
 
-.excel-table td,
-.excel-table th{
+td,th{
     border:1px solid #d1d5db;
     min-width:120px;
     height:38px;
-    padding:6px 10px;
+    padding:6px;
+}
+
+td:focus{
+    background:#dbeafe;
     outline:none;
 }
 
-.excel-table th{
-    background:#f3f4f6;
-    font-weight:bold;
+#status{
+    margin-top:10px;
+    color:#38bdf8;
 }
-
-.excel-table td:focus,
-.excel-table th:focus{
-    background:#dbeafe;
-}
-
-.excel-table td.selected{
-    background:#bfdbfe;
-}
-
-#logs{
-    background:#0f172a;
-    color:#93c5fd;
-    padding:12px;
-    border-radius:10px;
-    height:90px;
-    overflow:auto;
-    font-size:14px;
-}
-
-canvas{
-    max-width:100%;
-    border-radius:12px;
-    background:white;
-}
-
 </style>
 </head>
 
 <body class="p-6">
 
-<div class="max-w-7xl mx-auto">
+<div class="max-w-6xl mx-auto">
 
-<h1 class="text-4xl font-bold mb-2">
-📊 Table Image → Excel
+<h1 class="text-3xl font-bold mb-4">
+Table Image → Excel (Better Grid Detection)
 </h1>
 
-<p class="text-slate-400 mb-6">
-Extract tables locally and edit before export.
-</p>
+<input type="file" id="fileInput" class="mb-4">
 
-<input
-type="file"
-id="fileInput"
-accept="image/*"
-class="mb-5"
-/>
-
-<div class="grid md:grid-cols-2 gap-6">
-
-<div>
-
-<h2 class="text-2xl mb-3">
-Original
-</h2>
-
-<img
-id="preview"
-class="rounded-xl"
-/>
-
-</div>
-
-<div>
-
-<h2 class="text-2xl mb-3">
-Detected Grid
-</h2>
+<img id="preview" class="mb-4 rounded-xl max-w-md">
 
 <canvas id="canvas"></canvas>
 
-</div>
-
-</div>
-
-<div class="flex flex-wrap gap-4 mt-6">
-
-<button
-id="extractBtn"
-class="bg-sky-500 hover:bg-sky-600 px-6 py-3 rounded-xl">
-Extract Table
+<div class="flex gap-4 mt-4">
+<button id="extractBtn" class="bg-sky-500 px-4 py-2 rounded">
+Extract
 </button>
 
-<button
-id="mergeBtn"
-class="bg-purple-500 hover:bg-purple-600 px-6 py-3 rounded-xl">
-Merge Selected Cells
-</button>
-
-<button
-id="downloadBtn"
-class="bg-emerald-500 hover:bg-emerald-600 px-6 py-3 rounded-xl">
+<button id="downloadBtn" class="bg-green-500 px-4 py-2 rounded">
 Download Excel
 </button>
-
 </div>
 
-<div class="mt-5">
+<div id="status">Ready</div>
 
-<div id="logs">
-Ready
-</div>
-
-</div>
-
-<div class="mt-8 overflow-auto bg-slate-900 p-4 rounded-2xl">
-
-<table
-id="tableOutput"
-class="excel-table">
-</table>
-
-</div>
+<table id="table"></table>
 
 </div>
 
 <script>
 
-let uploadedFile = null;
-let extractedTable = [];
-let selectedCells = [];
+let imgFile;
+let tableData = [];
 
-const fileInput =
-document.getElementById('fileInput');
+const fileInput = document.getElementById("fileInput");
+const preview = document.getElementById("preview");
+const canvas = document.getElementById("canvas");
+const ctx = canvas.getContext("2d");
+const table = document.getElementById("table");
+const statusEl = document.getElementById("status");
 
-const preview =
-document.getElementById('preview');
+fileInput.onchange = e => {
+    imgFile = e.target.files[0];
+    preview.src = URL.createObjectURL(imgFile);
+    statusEl.innerText = "Image loaded";
+};
 
-const canvas =
-document.getElementById('canvas');
-
-const ctx =
-canvas.getContext('2d');
-
-const tableOutput =
-document.getElementById('tableOutput');
-
-const logs =
-document.getElementById('logs');
-
-function setLog(message){
-
-    logs.innerHTML = message;
+function setStatus(t){
+    statusEl.innerText = t;
 }
 
-fileInput.addEventListener('change', e=>{
+document.getElementById("extractBtn").onclick = async () => {
 
-    uploadedFile = e.target.files[0];
+if(!imgFile) return;
 
-    if(!uploadedFile) return;
+setStatus("Processing image...");
 
-    const reader = new FileReader();
+let img = new Image();
+img.src = URL.createObjectURL(imgFile);
 
-    reader.onload = ev=>{
+img.onload = async () => {
 
-        preview.src = ev.target.result;
+canvas.width = img.width;
+canvas.height = img.height;
+ctx.drawImage(img,0,0);
 
-        setLog('Image loaded successfully');
-    };
+let src = cv.imread(canvas);
+let gray = new cv.Mat();
 
-    reader.readAsDataURL(uploadedFile);
-});
+cv.cvtColor(src, gray, cv.COLOR_RGBA2GRAY);
 
-document
-.getElementById('extractBtn')
-.addEventListener('click', async ()=>{
+// invert + threshold
+let binary = new cv.Mat();
+cv.adaptiveThreshold(
+    gray,
+    binary,
+    255,
+    cv.ADAPTIVE_THRESH_MEAN_C,
+    cv.THRESH_BINARY_INV,
+    15,
+    10
+);
 
-    if(!uploadedFile){
+// ===== detect horizontal lines =====
+let horizontal = binary.clone();
+let horizontalSize = Math.floor(horizontal.cols / 30);
+let horizontalStructure = cv.getStructuringElement(cv.MORPH_RECT, new cv.Size(horizontalSize,1));
+cv.erode(horizontal, horizontal, horizontalStructure);
+cv.dilate(horizontal, horizontal, horizontalStructure);
 
-        alert('Upload image first');
+// ===== vertical lines =====
+let vertical = binary.clone();
+let verticalSize = Math.floor(vertical.rows / 30);
+let verticalStructure = cv.getStructuringElement(cv.MORPH_RECT, new cv.Size(1,verticalSize));
+cv.erode(vertical, vertical, verticalStructure);
+cv.dilate(vertical, vertical, verticalStructure);
 
-        return;
+// combine grid
+let grid = new cv.Mat();
+cv.add(horizontal, vertical, grid);
+
+// find intersections
+let contours = new cv.MatVector();
+let hierarchy = new cv.Mat();
+
+cv.findContours(grid, contours, hierarchy, cv.RETR_TREE, cv.CHAIN_APPROX_SIMPLE);
+
+let points = [];
+
+for(let i=0;i<contours.size();i++){
+    let r = cv.boundingRect(contours.get(i));
+
+    if(r.width < 50 && r.height < 50){
+        points.push({x:r.x, y:r.y});
     }
-
-    setLog('Preparing image');
-
-    const img = new Image();
-
-    img.src =
-    URL.createObjectURL(uploadedFile);
-
-    img.onload = async ()=>{
-
-        canvas.width = img.width;
-        canvas.height = img.height;
-
-        ctx.drawImage(img,0,0);
-
-        let src =
-        cv.imread(canvas);
-
-        let gray =
-        new cv.Mat();
-
-        cv.cvtColor(
-            src,
-            gray,
-            cv.COLOR_RGBA2GRAY
-        );
-
-        // Better thresholding
-
-        let binary =
-        new cv.Mat();
-
-        cv.adaptiveThreshold(
-            gray,
-            binary,
-            255,
-            cv.ADAPTIVE_THRESH_GAUSSIAN_C,
-            cv.THRESH_BINARY,
-            15,
-            5
-        );
-
-        cv.bitwise_not(
-            binary,
-            binary
-        );
-
-        setLog(
-        'Detecting table cells'
-        );
-
-        // Find contours directly
-
-        let contours =
-        new cv.MatVector();
-
-        let hierarchy =
-        new cv.Mat();
-
-        cv.findContours(
-            binary,
-            contours,
-            hierarchy,
-            cv.RETR_TREE,
-            cv.CHAIN_APPROX_SIMPLE
-        );
-
-        let cells = [];
-
-        for(
-            let i=0;
-            i<contours.size();
-            i++
-        ){
-
-            let rect =
-            cv.boundingRect(
-                contours.get(i)
-            );
-
-            // Better filtering
-
-            const valid =
-                rect.width > 50 &&
-                rect.height > 20 &&
-                rect.width < canvas.width*0.95 &&
-                rect.height < 150;
-
-            if(valid){
-
-                cells.push(rect);
-
-                cv.rectangle(
-                    src,
-                    new cv.Point(
-                        rect.x,
-                        rect.y
-                    ),
-                    new cv.Point(
-                        rect.x+rect.width,
-                        rect.y+rect.height
-                    ),
-                    [0,255,0,255],
-                    2
-                );
-            }
-        }
-
-        cv.imshow(canvas,src);
-
-        if(cells.length === 0){
-
-            setLog(
-            'No table cells detected'
-            );
-
-            return;
-        }
-
-        setLog(
-        `Detected ${cells.length} cells`
-        );
-
-        // Sort cells
-
-        cells.sort((a,b)=>{
-
-            if(
-                Math.abs(a.y-b.y)<15
-            ){
-                return a.x-b.x;
-            }
-
-            return a.y-b.y;
-        });
-
-        let rows = [];
-        let currentRow = [];
-
-        let lastY = -1;
-
-        cells.forEach(cell=>{
-
-            if(
-                lastY === -1 ||
-                Math.abs(
-                    cell.y-lastY
-                ) < 20
-            ){
-
-                currentRow.push(cell);
-
-            }else{
-
-                rows.push(currentRow);
-
-                currentRow=[cell];
-            }
-
-            lastY = cell.y;
-        });
-
-        if(currentRow.length){
-
-            rows.push(currentRow);
-        }
-
-        extractedTable = [];
-
-        setLog(
-        'Extracting text from table'
-        );
-
-        for(
-            let r=0;
-            r<rows.length;
-            r++
-        ){
-
-            let rowData = [];
-
-            rows[r].sort(
-                (a,b)=>a.x-b.x
-            );
-
-            for(
-                let c=0;
-                c<rows[r].length;
-                c++
-            ){
-
-                await new Promise(
-                    r=>setTimeout(r,10)
-                );
-
-                let rect =
-                rows[r][c];
-
-                let roi =
-                gray.roi(rect);
-
-                let tempCanvas =
-                document.createElement(
-                    'canvas'
-                );
-
-                cv.imshow(
-                    tempCanvas,
-                    roi
-                );
-
-                const {
-                    data:{text}
-                } =
-                await Tesseract.recognize(
-                    tempCanvas,
-                    'eng'
-                );
-
-                let cleaned =
-                text
-                .replace(/\n/g,' ')
-                .trim();
-
-                rowData.push(cleaned);
-
-                roi.delete();
-            }
-
-            // Ignore empty rows
-
-            if(
-                rowData.some(
-                    x=>x.trim()!==''
-                )
-            ){
-
-                extractedTable.push(
-                    rowData
-                );
-            }
-        }
-
-        renderTable();
-
-        setLog(
-        'Table ready for editing'
-        );
-
-        src.delete();
-        gray.delete();
-        binary.delete();
-        contours.delete();
-        hierarchy.delete();
-    };
-});
-
-function renderTable(){
-
-    tableOutput.innerHTML='';
-
-    extractedTable.forEach(
-    (row,rowIndex)=>{
-
-        const tr =
-        document.createElement('tr');
-
-        row.forEach(
-        (cell,colIndex)=>{
-
-            const td =
-            document.createElement(
-                rowIndex===0
-                ? 'th'
-                : 'td'
-            );
-
-            td.contentEditable =
-            true;
-
-            td.innerText =
-            cell;
-
-            td.addEventListener(
-                'input',
-                ()=>{
-
-                    extractedTable
-                    [rowIndex]
-                    [colIndex]
-                    =
-                    td.innerText;
-                }
-            );
-
-            td.addEventListener(
-                'click',
-                ()=>{
-
-                    td.classList.toggle(
-                        'selected'
-                    );
-
-                    if(
-                        selectedCells
-                        .includes(td)
-                    ){
-
-                        selectedCells =
-                        selectedCells
-                        .filter(
-                            x=>x!==td
-                        );
-
-                    }else{
-
-                        selectedCells
-                        .push(td);
-                    }
-                }
-            );
-
-            tr.appendChild(td);
-        });
-
-        tableOutput.appendChild(tr);
-    });
 }
 
-document
-.getElementById('mergeBtn')
-.addEventListener('click', ()=>{
+// sort points
+points.sort((a,b)=>a.y-b.y || a.x-b.x);
 
-    if(
-        selectedCells.length < 2
-    ){
+// build rows
+let rows = [];
+let current = [];
+let lastY = -1;
 
-        alert(
-        'Select at least 2 cells'
-        );
+for(let p of points){
 
-        return;
+    if(lastY === -1 || Math.abs(p.y - lastY) < 20){
+        current.push(p);
+    } else {
+        rows.push(current);
+        current = [p];
     }
 
-    const first =
-    selectedCells[0];
+    lastY = p.y;
+}
 
-    first.colSpan =
-    selectedCells.length;
+if(current.length) rows.push(current);
 
-    first.innerText =
-    selectedCells
-    .map(
-        c=>c.innerText
-    )
-    .join(' ');
+// build grid cells
+tableData = [];
 
-    for(
-        let i=1;
-        i<selectedCells.length;
-        i++
-    ){
+setStatus("Extracting text...");
 
-        selectedCells[i].remove();
+for(let r=0;r<rows.length-1;r++){
+
+    let row = [];
+
+    for(let c=0;c<rows[r].length-1;c++){
+
+        let x1 = rows[r][c].x;
+        let y1 = rows[r][c].y;
+        let x2 = rows[r][c+1].x;
+        let y2 = rows[r+1][c].y;
+
+        let roi = src.roi(new cv.Rect(x1,y1,x2-x1,y2-y1));
+
+        let tempCanvas = document.createElement("canvas");
+        cv.imshow(tempCanvas, roi);
+
+        let result = await Tesseract.recognize(tempCanvas,'eng');
+        let text = result.data.text.trim();
+
+        row.push(text);
+
+        roi.delete();
     }
 
-    selectedCells.forEach(
-        c=>c.classList.remove(
-            'selected'
-        )
-    );
+    tableData.push(row);
+}
 
-    selectedCells=[];
+render();
 
-    setLog(
-    'Cells merged'
-    );
-});
+setStatus("Done");
+};
 
-document
-.getElementById('downloadBtn')
-.addEventListener('click', ()=>{
+};
 
-    let finalData = [];
+function render(){
 
-    const rows =
-    tableOutput.querySelectorAll(
-        'tr'
-    );
+table.innerHTML = "";
 
-    rows.forEach(row=>{
+tableData.forEach((row,r)=>{
 
-        let rowData=[];
+    let tr = document.createElement("tr");
 
-        row.querySelectorAll(
-            'th,td'
-        ).forEach(cell=>{
+    row.forEach((cell,c)=>{
 
-            rowData.push(
-                cell.innerText
-            );
-        });
+        let td = document.createElement(r===0 ? "th":"td");
+        td.contentEditable = true;
+        td.innerText = cell;
 
-        finalData.push(
-            rowData
-        );
+        td.oninput = () => {
+            tableData[r][c] = td.innerText;
+        };
+
+        tr.appendChild(td);
     });
 
-    const ws =
-    XLSX.utils.aoa_to_sheet(
-        finalData
-    );
-
-    const wb =
-    XLSX.utils.book_new();
-
-    XLSX.utils.book_append_sheet(
-        wb,
-        ws,
-        'Sheet1'
-    );
-
-    XLSX.writeFile(
-        wb,
-        'table.xlsx'
-    );
-
-    setLog(
-    'Excel file downloaded'
-    );
+    table.appendChild(tr);
 });
+
+}
+
+document.getElementById("downloadBtn").onclick = () => {
+
+let ws = XLSX.utils.aoa_to_sheet(tableData);
+let wb = XLSX.utils.book_new();
+
+XLSX.utils.book_append_sheet(wb, ws, "Sheet1");
+
+XLSX.writeFile(wb, "table.xlsx");
+
+};
 
 </script>
 
