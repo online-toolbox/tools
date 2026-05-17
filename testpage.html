@@ -1,10 +1,10 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-<meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0"/>
 
-<title>Table Image to Excel</title>
+<title>Table Image → Excel</title>
 
 <script src="https://cdn.tailwindcss.com"></script>
 
@@ -15,36 +15,60 @@
 <script src="https://cdn.sheetjs.com/xlsx-0.20.2/package/dist/xlsx.full.min.js"></script>
 
 <style>
+
 body{
-    background:#0f172a;
+    background:#111827;
     color:white;
     font-family:Arial;
 }
 
-table{
+.excel-table{
     border-collapse:collapse;
-    width:100%;
+    background:white;
+    color:black;
+    width:max-content;
+    min-width:100%;
 }
 
-td,th{
-    border:1px solid #334155;
-    padding:6px;
+.excel-table td,
+.excel-table th{
+    border:1px solid #d1d5db;
+    min-width:120px;
+    height:38px;
+    padding:6px 10px;
+    outline:none;
+    position:relative;
+}
+
+.excel-table th{
+    background:#f3f4f6;
+    font-weight:bold;
+}
+
+.excel-table td:focus,
+.excel-table th:focus{
+    background:#dbeafe;
+}
+
+.excel-table td.selected{
+    background:#bfdbfe;
+}
+
+#logs{
+    background:#0f172a;
+    color:#93c5fd;
+    padding:12px;
+    border-radius:10px;
+    height:90px;
+    overflow:auto;
+    font-size:14px;
 }
 
 canvas{
     max-width:100%;
+    border-radius:12px;
 }
 
-#logs{
-    background:black;
-    color:#22c55e;
-    height:250px;
-    overflow:auto;
-    padding:12px;
-    border-radius:12px;
-    font-family:monospace;
-    font-size:13px;
-}
 </style>
 </head>
 <body class="p-6">
@@ -56,79 +80,75 @@ canvas{
 </h1>
 
 <p class="text-slate-400 mb-6">
-Runs fully locally in your browser.
+Extract tables locally and edit before export.
 </p>
 
 <input
 type="file"
 id="fileInput"
 accept="image/*"
-class="mb-5 block">
+class="mb-5"
+/>
 
 <div class="grid md:grid-cols-2 gap-6">
 
 <div>
-<h2 class="text-2xl mb-3">Original</h2>
+<h2 class="text-2xl mb-3">
+Original
+</h2>
 
 <img
 id="preview"
-class="rounded-xl">
+class="rounded-xl"
+/>
 </div>
 
 <div>
-<h2 class="text-2xl mb-3">Detected Table</h2>
+<h2 class="text-2xl mb-3">
+Detected Table
+</h2>
 
 <canvas id="canvas"></canvas>
 </div>
 
 </div>
 
-<div class="mt-6 flex flex-wrap gap-4 items-center">
+<div class="flex flex-wrap gap-4 mt-6">
 
 <button
 id="extractBtn"
-class="bg-sky-500 px-6 py-3 rounded-xl">
-Extract
+class="bg-sky-500 hover:bg-sky-600 px-6 py-3 rounded-xl">
+Extract Table
+</button>
+
+<button
+id="mergeBtn"
+class="bg-purple-500 hover:bg-purple-600 px-6 py-3 rounded-xl">
+Merge Selected Cells
 </button>
 
 <button
 id="downloadBtn"
-class="bg-emerald-500 px-6 py-3 rounded-xl">
+class="bg-emerald-500 hover:bg-emerald-600 px-6 py-3 rounded-xl">
 Download Excel
 </button>
 
-<label class="flex items-center gap-2">
+</div>
 
-<input
-type="checkbox"
-id="tableOnlyToggle"
-checked
-class="w-5 h-5">
+<div class="mt-5">
 
-<span>Table Only Mode</span>
-
-</label>
+<div id="logs">
+Ready
+</div>
 
 </div>
 
-<p
-id="status"
-class="mt-5 text-sky-400">
-</p>
+<div class="mt-8 overflow-auto bg-slate-900 p-4 rounded-2xl">
 
-<div class="mt-6">
-
-<h2 class="text-xl mb-2 font-semibold">
-Live Logs
-</h2>
-
-<div id="logs"></div>
-
-</div>
-
-<div class="mt-8 overflow-auto">
-
-<table id="tableOutput"></table>
+<table
+id="tableOutput"
+class="excel-table">
+</table>
 
 </div>
 
@@ -138,6 +158,7 @@ Live Logs
 
 let uploadedFile = null;
 let extractedTable = [];
+let selectedCells = [];
 
 const fileInput =
 document.getElementById('fileInput');
@@ -151,32 +172,18 @@ document.getElementById('canvas');
 const ctx =
 canvas.getContext('2d');
 
-const statusText =
-document.getElementById('status');
-
 const tableOutput =
 document.getElementById('tableOutput');
 
 const logs =
 document.getElementById('logs');
 
-function setStatus(text){
-    statusText.innerText = text;
+function setLog(message){
+
+    logs.innerHTML = message;
 }
 
-function log(message){
-
-    const time =
-    new Date().toLocaleTimeString();
-
-    logs.innerHTML +=
-    `[${time}] ${message}<br>`;
-
-    logs.scrollTop =
-    logs.scrollHeight;
-}
-
-fileInput.addEventListener('change', e => {
+fileInput.addEventListener('change', e=>{
 
     uploadedFile = e.target.files[0];
 
@@ -184,12 +191,11 @@ fileInput.addEventListener('change', e => {
 
     const reader = new FileReader();
 
-    reader.onload = ev => {
+    reader.onload = ev=>{
 
-        preview.src =
-        ev.target.result;
+        preview.src = ev.target.result;
 
-        log('Image uploaded');
+        setLog('Image loaded successfully');
     };
 
     reader.readAsDataURL(uploadedFile);
@@ -206,10 +212,7 @@ document
         return;
     }
 
-    logs.innerHTML = '';
-
-    setStatus('Loading image...');
-    log('Loading image');
+    setLog('Preparing image');
 
     const img = new Image();
 
@@ -223,8 +226,6 @@ document
 
         ctx.drawImage(img,0,0);
 
-        log('Image rendered to canvas');
-
         let src = cv.imread(canvas);
 
         let gray = new cv.Mat();
@@ -235,19 +236,86 @@ document
             cv.COLOR_RGBA2GRAY
         );
 
-        log('Converted to grayscale');
-
         let binary = new cv.Mat();
 
-        cv.threshold(
+        cv.adaptiveThreshold(
             gray,
             binary,
-            150,
             255,
-            cv.THRESH_BINARY_INV
+            cv.ADAPTIVE_THRESH_GAUSSIAN_C,
+            cv.THRESH_BINARY_INV,
+            15,
+            8
         );
 
-        log('Threshold applied');
+        setLog('Detecting table structure');
+
+        let horizontal =
+        binary.clone();
+
+        let vertical =
+        binary.clone();
+
+        let horizontalSize =
+        Math.floor(
+            horizontal.cols / 20
+        );
+
+        let verticalSize =
+        Math.floor(
+            vertical.rows / 20
+        );
+
+        let horizontalStructure =
+        cv.getStructuringElement(
+            cv.MORPH_RECT,
+            new cv.Size(
+                horizontalSize,
+                1
+            )
+        );
+
+        let verticalStructure =
+        cv.getStructuringElement(
+            cv.MORPH_RECT,
+            new cv.Size(
+                1,
+                verticalSize
+            )
+        );
+
+        cv.erode(
+            horizontal,
+            horizontal,
+            horizontalStructure
+        );
+
+        cv.dilate(
+            horizontal,
+            horizontal,
+            horizontalStructure
+        );
+
+        cv.erode(
+            vertical,
+            vertical,
+            verticalStructure
+        );
+
+        cv.dilate(
+            vertical,
+            vertical,
+            verticalStructure
+        );
+
+        let mask =
+        new cv.Mat();
+
+        cv.add(
+            horizontal,
+            vertical,
+            mask
+        );
 
         let contours =
         new cv.MatVector();
@@ -256,51 +324,31 @@ document
         new cv.Mat();
 
         cv.findContours(
-            binary,
+            mask,
             contours,
             hierarchy,
             cv.RETR_TREE,
             cv.CHAIN_APPROX_SIMPLE
         );
 
-        log(
-        `${contours.size()} contours found`
-        );
-
         let cells = [];
-
-        const tableOnly =
-        document
-        .getElementById(
-            'tableOnlyToggle'
-        ).checked;
 
         for(let i=0;i<contours.size();i++){
 
-            let cnt =
-            contours.get(i);
-
             let rect =
-            cv.boundingRect(cnt);
+            cv.boundingRect(
+                contours.get(i)
+            );
 
-            const validSize =
-                rect.width > 40 &&
-                rect.height > 20;
+            // aggressive filtering
 
-            const aspect =
-                rect.width / rect.height;
+            const valid =
+                rect.width > 60 &&
+                rect.height > 25 &&
+                rect.width < canvas.width*0.9 &&
+                rect.height < 120;
 
-            const looksLikeCell =
-                aspect > 0.8 &&
-                aspect < 12;
-
-            if(
-                validSize &&
-                (
-                    !tableOnly ||
-                    looksLikeCell
-                )
-            ){
+            if(valid){
 
                 cells.push(rect);
 
@@ -311,50 +359,40 @@ document
                         rect.y
                     ),
                     new cv.Point(
-                        rect.x + rect.width,
-                        rect.y + rect.height
+                        rect.x+rect.width,
+                        rect.y+rect.height
                     ),
                     [0,255,0,255],
                     2
-                );
-
-                log(
-                `Cell:
-x=${rect.x}
-y=${rect.y}
-w=${rect.width}
-h=${rect.height}`
                 );
             }
         }
 
         cv.imshow(canvas,src);
 
-        setStatus('Sorting cells...');
-        log(`${cells.length} valid cells`);
+        setLog('Organizing rows');
 
         cells.sort((a,b)=>{
 
             if(
                 Math.abs(a.y-b.y) < 10
             ){
-                return a.x - b.x;
+                return a.x-b.x;
             }
 
-            return a.y - b.y;
+            return a.y-b.y;
         });
 
         let rows = [];
         let currentRow = [];
+
         let lastY = -1;
 
         cells.forEach(cell=>{
 
             if(
                 lastY === -1 ||
-                Math.abs(
-                    cell.y-lastY
-                ) < 15
+                Math.abs(cell.y-lastY)<15
             ){
 
                 currentRow.push(cell);
@@ -363,7 +401,7 @@ h=${rect.height}`
 
                 rows.push(currentRow);
 
-                currentRow = [cell];
+                currentRow=[cell];
             }
 
             lastY = cell.y;
@@ -373,11 +411,9 @@ h=${rect.height}`
             rows.push(currentRow);
         }
 
-        log(`${rows.length} rows detected`);
-
-        setStatus('Running OCR...');
-
         extractedTable = [];
+
+        setLog('Extracting text');
 
         for(let r=0;r<rows.length;r++){
 
@@ -387,11 +423,7 @@ h=${rect.height}`
                 (a,b)=>a.x-b.x
             );
 
-            for(
-                let c=0;
-                c<rows[r].length;
-                c++
-            ){
+            for(let c=0;c<rows[r].length;c++){
 
                 await new Promise(
                     r=>setTimeout(r,10)
@@ -400,17 +432,11 @@ h=${rect.height}`
                 let rect =
                 rows[r][c];
 
-                log(
-                `OCR row ${r+1}
-cell ${c+1}`
-                );
-
                 let roi =
-                src.roi(rect);
+                gray.roi(rect);
 
                 let tempCanvas =
-                document
-                .createElement(
+                document.createElement(
                     'canvas'
                 );
 
@@ -422,72 +448,48 @@ cell ${c+1}`
                 const {
                     data:{text}
                 } =
-                await Tesseract
-                .recognize(
+                await Tesseract.recognize(
                     tempCanvas,
-                    'eng',
-                    {
-                        logger:m=>{
-
-                            if(m.status){
-
-                                setStatus(
-                                `${m.status}
-${Math.round(
-(m.progress||0)*100
-)}%`
-                                );
-                            }
-                        }
-                    }
+                    'eng'
                 );
 
                 rowData.push(
                     text.trim()
                 );
 
-                log(
-                `Extracted:
-"${text.trim()}"`
-                );
-
                 roi.delete();
             }
 
-            extractedTable.push(
-                rowData
-            );
+            extractedTable.push(rowData);
         }
 
-        renderTable(
-            extractedTable
-        );
+        renderTable();
 
-        log(
-        'Excel-ready table generated'
-        );
-
-        setStatus('Done ✅');
+        setLog('Table ready for editing');
 
         src.delete();
         gray.delete();
         binary.delete();
+        horizontal.delete();
+        vertical.delete();
+        mask.delete();
         contours.delete();
         hierarchy.delete();
     };
 });
 
-function renderTable(data){
+function renderTable(){
 
     tableOutput.innerHTML = '';
 
-    data.forEach(
+    extractedTable.forEach(
     (row,rowIndex)=>{
 
         const tr =
         document.createElement('tr');
 
-        row.forEach(cell=>{
+        row.forEach(
+        (cell,colIndex)=>{
 
             const td =
             document.createElement(
@@ -496,7 +498,52 @@ function renderTable(data){
                 : 'td'
             );
 
+            td.contentEditable = true;
+
             td.innerText = cell;
+
+            td.dataset.row =
+            rowIndex;
+
+            td.dataset.col =
+            colIndex;
+
+            td.addEventListener(
+                'input',
+                ()=>{
+                    extractedTable
+                    [rowIndex]
+                    [colIndex]
+                    = td.innerText;
+                }
+            );
+
+            td.addEventListener(
+                'click',
+                ()=>{
+
+                    td.classList.toggle(
+                        'selected'
+                    );
+
+                    if(
+                        selectedCells
+                        .includes(td)
+                    ){
+
+                        selectedCells =
+                        selectedCells
+                        .filter(
+                            x=>x!==td
+                        );
+
+                    }else{
+
+                        selectedCells
+                        .push(td);
+                    }
+                }
+            );
 
             tr.appendChild(td);
         });
@@ -506,19 +553,80 @@ function renderTable(data){
 }
 
 document
-.getElementById('downloadBtn')
-.addEventListener('click',()=>{
+.getElementById('mergeBtn')
+.addEventListener('click', ()=>{
 
-    if(!extractedTable.length){
+    if(selectedCells.length < 2){
 
-        alert('No data');
+        alert(
+        'Select at least 2 cells'
+        );
 
         return;
     }
 
+    const first =
+    selectedCells[0];
+
+    first.colSpan =
+    selectedCells.length;
+
+    let mergedText =
+    selectedCells
+    .map(
+        c=>c.innerText
+    )
+    .join(' ');
+
+    first.innerText =
+    mergedText;
+
+    for(let i=1;i<
+        selectedCells.length;
+        i++
+    ){
+        selectedCells[i].remove();
+    }
+
+    selectedCells.forEach(
+        c=>c.classList.remove(
+            'selected'
+        )
+    );
+
+    selectedCells=[];
+
+    setLog('Cells merged');
+});
+
+document
+.getElementById('downloadBtn')
+.addEventListener('click', ()=>{
+
+    let finalData = [];
+
+    const rows =
+    tableOutput.querySelectorAll('tr');
+
+    rows.forEach(row=>{
+
+        let rowData = [];
+
+        row.querySelectorAll(
+            'th,td'
+        ).forEach(cell=>{
+
+            rowData.push(
+                cell.innerText
+            );
+        });
+
+        finalData.push(rowData);
+    });
+
     const ws =
     XLSX.utils.aoa_to_sheet(
-        extractedTable
+        finalData
     );
 
     const wb =
@@ -535,7 +643,7 @@ document
         'table.xlsx'
     );
 
-    log('Excel downloaded');
+    setLog('Excel file downloaded');
 });
 
 </script>
