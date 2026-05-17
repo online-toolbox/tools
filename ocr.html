@@ -128,6 +128,36 @@
       margin-top: 10px;
       padding-left: 4px;
     }
+
+.toast {
+      position: fixed;
+      bottom: 30px;
+      left: 50%;
+      transform: translateX(-50%) translateY(100px);
+      background: #1e293b;
+      border: 1px solid #38bdf8;
+      color: #e2e8f0;
+      padding: 14px 24px;
+      border-radius: 8px;
+      font-size: 0.95rem;
+      font-weight: 500;
+      box-shadow: 0 10px 30px rgba(0,0,0,0.3);
+      opacity: 0;
+      transition: all 0.3s ease;
+      z-index: 1000;
+      display: flex;
+      align-items: center;
+      gap: 10px;
+    }
+.toast.show {
+      transform: translateX(-50%) translateY(0);
+      opacity: 1;
+    }
+.toast svg {
+      width: 18px;
+      height: 18px;
+      stroke: #22c55e;
+    }
   </style>
 </head>
 <body>
@@ -258,13 +288,13 @@
     fileInput.onchange = (e) => { if (e.target.files.length) handleFile(e.target.files[0]); };
 
     function handleFile(file) {
-      if (!file.type.startsWith('image/')) return alert('Please upload an image');
-      if (file.size > 10 * 1024 * 1024) return alert('Max 10MB');
+      if (!file.type.startsWith('image/')) return showToast('Please upload an image');
+      if (file.size > 10 * 1024 * 1024) return showToast('Max 10MB');
       selectedImageBlob = file;
       processImage(URL.createObjectURL(file));
     }
 
-    // URL input with transparent proxy fallback
+    // URL input with transparent proxy fallback + logging
     document.getElementById('loadUrlBtn').onclick = async () => {
       const url = document.getElementById('urlInput').value.trim();
       const errorDiv = document.getElementById('urlError');
@@ -389,7 +419,7 @@
         document.getElementById('progress').style.display = 'none';
         document.getElementById('result').style.display = 'block';
       } catch (err) {
-        alert('OCR failed: ' + err.message);
+        showToast('OCR failed: ' + err.message);
         document.getElementById('progress').style.display = 'none';
       }
       document.getElementById('extractBtn').disabled = false;
@@ -402,9 +432,16 @@
     function copyText() {
       const text = document.getElementById('outputText');
       text.select();
-      document.execCommand('copy');
-      alert('Copied!');
+      text.setSelectionRange(0, 99999);
+
+      navigator.clipboard.writeText(text.value).then(() => {
+        showToast('Copied to clipboard');
+      }).catch(() => {
+        document.execCommand('copy');
+        showToast('Copied to clipboard');
+      });
     }
+
     function downloadText() {
       const text = document.getElementById('outputText').value;
       const blob = new Blob([text], { type: 'text/plain' });
@@ -413,6 +450,28 @@
       a.href = url;
       a.download = 'extracted-text.txt';
       a.click();
+      showToast('Download started');
+    }
+
+    function showToast(message) {
+      const existing = document.querySelector('.toast');
+      if (existing) existing.remove();
+
+      const toast = document.createElement('div');
+      toast.className = 'toast';
+      toast.innerHTML = `
+        <svg fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"></path>
+        </svg>
+        ${message}
+      `;
+      document.body.appendChild(toast);
+
+      setTimeout(() => toast.classList.add('show'), 10);
+      setTimeout(() => {
+        toast.classList.remove('show');
+        setTimeout(() => toast.remove(), 300);
+      }, 2500);
     }
   </script>
 </body>
