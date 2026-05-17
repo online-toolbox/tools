@@ -1,362 +1,332 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-  <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
-  <title>Table Image → Excel Converter</title>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
 
-  <!-- Tailwind -->
-  <script src="https://cdn.tailwindcss.com"></script>
+<title>Table Image to Excel</title>
 
-  <!-- OpenCV -->
-  <script async src="https://docs.opencv.org/4.x/opencv.js"></script>
+<script src="https://cdn.tailwindcss.com"></script>
 
-  <!-- Tesseract -->
-  <script src="https://cdn.jsdelivr.net/npm/tesseract.js@5/dist/tesseract.min.js"></script>
+<script async src="https://docs.opencv.org/4.x/opencv.js"></script>
 
-  <!-- SheetJS -->
-  <script src="https://cdn.sheetjs.com/xlsx-0.20.2/package/dist/xlsx.full.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/tesseract.js@5/dist/tesseract.min.js"></script>
 
-  <style>
-    body {
-      background: #0f172a;
-      color: white;
-      font-family: Arial, sans-serif;
-    }
+<script src="https://cdn.sheetjs.com/xlsx-0.20.2/package/dist/xlsx.full.min.js"></script>
 
-    canvas {
-      max-width: 100%;
-      border-radius: 12px;
-    }
+<style>
+body{
+    background:#0f172a;
+    color:white;
+    font-family:Arial;
+}
 
-    table {
-      border-collapse: collapse;
-      width: 100%;
-    }
+table{
+    border-collapse:collapse;
+    width:100%;
+}
 
-    td, th {
-      border: 1px solid #334155;
-      padding: 8px;
-    }
+td,th{
+    border:1px solid #334155;
+    padding:6px;
+}
 
-    .loader {
-      border: 4px solid rgba(255,255,255,0.2);
-      border-top: 4px solid #38bdf8;
-      border-radius: 50%;
-      width: 28px;
-      height: 28px;
-      animation: spin 1s linear infinite;
-    }
-
-    @keyframes spin {
-      100% {
-        transform: rotate(360deg);
-      }
-    }
-  </style>
+canvas{
+    max-width:100%;
+}
+</style>
 </head>
-<body class="min-h-screen p-6">
+<body class="p-6">
 
-  <div class="max-w-6xl mx-auto">
+<div class="max-w-7xl mx-auto">
 
-    <h1 class="text-4xl font-bold text-center mb-2">
-      📊 Image Table → Excel
-    </h1>
+<h1 class="text-4xl font-bold mb-2">
+📊 Table Image → Excel
+</h1>
 
-    <p class="text-center text-slate-400 mb-8">
-      Fully local • No uploads • Free forever
-    </p>
+<p class="text-slate-400 mb-6">
+Runs fully locally in your browser.
+</p>
 
-    <!-- Upload -->
-    <div class="bg-slate-800 rounded-2xl p-8">
+<input type="file" id="fileInput" accept="image/*"
+class="mb-5 block">
 
-      <input
-        type="file"
-        id="fileInput"
-        accept="image/*"
-        class="mb-4"
-      />
+<div class="grid md:grid-cols-2 gap-6">
 
-      <div class="grid md:grid-cols-2 gap-6">
+<div>
+<h2 class="text-2xl mb-3">Original</h2>
+<img id="preview" class="rounded-xl">
+</div>
 
-        <!-- Original -->
-        <div>
-          <h2 class="text-xl font-semibold mb-3">
-            Original Image
-          </h2>
+<div>
+<h2 class="text-2xl mb-3">Detected Table</h2>
+<canvas id="canvas"></canvas>
+</div>
 
-          <img
-            id="preview"
-            class="rounded-xl hidden w-full"
-          />
-        </div>
+</div>
 
-        <!-- Processed -->
-        <div>
-          <h2 class="text-xl font-semibold mb-3">
-            Processed Table
-          </h2>
+<div class="mt-6 flex gap-4">
 
-          <canvas id="canvas"></canvas>
-        </div>
+<button id="extractBtn"
+class="bg-sky-500 px-6 py-3 rounded-xl">
+Extract
+</button>
 
-      </div>
+<button id="downloadBtn"
+class="bg-emerald-500 px-6 py-3 rounded-xl">
+Download Excel
+</button>
 
-      <!-- Buttons -->
-      <div class="flex gap-4 mt-6">
+</div>
 
-        <button
-          id="extractBtn"
-          class="bg-sky-500 hover:bg-sky-600 px-6 py-3 rounded-xl font-semibold"
-        >
-          Extract Table
-        </button>
+<p id="status" class="mt-5 text-sky-400"></p>
 
-        <button
-          id="downloadBtn"
-          class="bg-emerald-500 hover:bg-emerald-600 px-6 py-3 rounded-xl font-semibold"
-        >
-          Download Excel
-        </button>
+<div class="mt-8 overflow-auto">
 
-      </div>
+<table id="tableOutput"></table>
 
-      <!-- Status -->
-      <div class="flex items-center gap-3 mt-5">
+</div>
 
-        <div id="loader" class="loader hidden"></div>
-
-        <p id="status" class="text-slate-300"></p>
-
-      </div>
-
-    </div>
-
-    <!-- Table -->
-    <div class="mt-8 bg-slate-800 rounded-2xl p-6 overflow-auto">
-
-      <h2 class="text-2xl font-semibold mb-4">
-        Extracted Table
-      </h2>
-
-      <table id="tableOutput"></table>
-
-    </div>
-
-  </div>
+</div>
 
 <script>
-let uploadedImage = null;
-let extractedData = [];
+
+let uploadedFile = null;
+let extractedTable = [];
 
 const fileInput = document.getElementById('fileInput');
 const preview = document.getElementById('preview');
 const canvas = document.getElementById('canvas');
 const ctx = canvas.getContext('2d');
 
-const extractBtn = document.getElementById('extractBtn');
-const downloadBtn = document.getElementById('downloadBtn');
-
+const statusText = document.getElementById('status');
 const tableOutput = document.getElementById('tableOutput');
 
-const statusText = document.getElementById('status');
-const loader = document.getElementById('loader');
-
-function setStatus(text) {
-  statusText.innerText = text;
-}
-
-function showLoader(show) {
-  loader.classList.toggle('hidden', !show);
-}
-
 fileInput.addEventListener('change', e => {
-  const file = e.target.files[0];
 
-  if (!file) return;
+    uploadedFile = e.target.files[0];
 
-  uploadedImage = file;
+    if(!uploadedFile) return;
 
-  const reader = new FileReader();
+    const reader = new FileReader();
 
-  reader.onload = function(event) {
-    preview.src = event.target.result;
-    preview.classList.remove('hidden');
-  };
+    reader.onload = ev => {
+        preview.src = ev.target.result;
+    };
 
-  reader.readAsDataURL(file);
+    reader.readAsDataURL(uploadedFile);
 });
 
-extractBtn.addEventListener('click', async () => {
+function setStatus(text){
+    statusText.innerText = text;
+}
 
-  if (!uploadedImage) {
-    alert('Please upload an image.');
-    return;
-  }
+document.getElementById('extractBtn')
+.addEventListener('click', async ()=>{
 
-  showLoader(true);
-
-  try {
+    if(!uploadedFile){
+        alert('Upload image first');
+        return;
+    }
 
     setStatus('Loading image...');
 
-    const image = new Image();
+    const img = new Image();
 
-    image.src = URL.createObjectURL(uploadedImage);
+    img.src = URL.createObjectURL(uploadedFile);
 
-    image.onload = async () => {
+    img.onload = async ()=>{
 
-      canvas.width = image.width;
-      canvas.height = image.height;
+        canvas.width = img.width;
+        canvas.height = img.height;
 
-      ctx.drawImage(image, 0, 0);
+        ctx.drawImage(img,0,0);
 
-      setStatus('Processing table structure...');
+        let src = cv.imread(canvas);
 
-      // OpenCV processing
-      let src = cv.imread(canvas);
-      let gray = new cv.Mat();
+        let gray = new cv.Mat();
 
-      cv.cvtColor(src, gray, cv.COLOR_RGBA2GRAY);
+        cv.cvtColor(src,gray,cv.COLOR_RGBA2GRAY);
 
-      let binary = new cv.Mat();
+        let binary = new cv.Mat();
 
-      cv.adaptiveThreshold(
-        gray,
-        binary,
-        255,
-        cv.ADAPTIVE_THRESH_GAUSSIAN_C,
-        cv.THRESH_BINARY_INV,
-        15,
-        10
-      );
+        cv.threshold(
+            gray,
+            binary,
+            150,
+            255,
+            cv.THRESH_BINARY_INV
+        );
 
-      // Detect horizontal lines
-      let horizontal = binary.clone();
-      let horizontalSize = Math.floor(horizontal.cols / 20);
+        // Detect contours
+        let contours = new cv.MatVector();
+        let hierarchy = new cv.Mat();
 
-      let horizontalStructure = cv.getStructuringElement(
-        cv.MORPH_RECT,
-        new cv.Size(horizontalSize, 1)
-      );
+        cv.findContours(
+            binary,
+            contours,
+            hierarchy,
+            cv.RETR_TREE,
+            cv.CHAIN_APPROX_SIMPLE
+        );
 
-      cv.erode(horizontal, horizontal, horizontalStructure);
-      cv.dilate(horizontal, horizontal, horizontalStructure);
+        let cells = [];
 
-      // Detect vertical lines
-      let vertical = binary.clone();
-      let verticalSize = Math.floor(vertical.rows / 20);
+        for(let i=0;i<contours.size();i++){
 
-      let verticalStructure = cv.getStructuringElement(
-        cv.MORPH_RECT,
-        new cv.Size(1, verticalSize)
-      );
+            let cnt = contours.get(i);
 
-      cv.erode(vertical, vertical, verticalStructure);
-      cv.dilate(vertical, vertical, verticalStructure);
+            let rect = cv.boundingRect(cnt);
 
-      // Combine
-      let mask = new cv.Mat();
+            // Ignore tiny boxes
+            if(rect.width > 40 && rect.height > 20){
 
-      cv.add(horizontal, vertical, mask);
+                cells.push(rect);
 
-      cv.imshow(canvas, mask);
+                cv.rectangle(
+                    src,
+                    new cv.Point(rect.x, rect.y),
+                    new cv.Point(rect.x+rect.width,
+                                 rect.y+rect.height),
+                    [0,255,0,255],
+                    2
+                );
+            }
+        }
 
-      setStatus('Running OCR...');
+        cv.imshow(canvas,src);
 
-      const {
-        data: { text }
-      } = await Tesseract.recognize(
-        canvas,
-        'eng'
-      );
+        setStatus('Sorting cells...');
 
-      extractedData = parseTable(text);
+        // Sort top-to-bottom
+        cells.sort((a,b)=>{
 
-      renderTable(extractedData);
+            if(Math.abs(a.y-b.y) < 10){
+                return a.x - b.x;
+            }
 
-      setStatus('Done ✅');
+            return a.y - b.y;
+        });
 
-      src.delete();
-      gray.delete();
-      binary.delete();
-      horizontal.delete();
-      vertical.delete();
-      mask.delete();
+        // Group rows
+        let rows = [];
+        let currentRow = [];
 
-      showLoader(false);
+        let lastY = -1;
+
+        cells.forEach(cell=>{
+
+            if(lastY === -1 ||
+               Math.abs(cell.y-lastY) < 15){
+
+                currentRow.push(cell);
+
+            }else{
+
+                rows.push(currentRow);
+                currentRow = [cell];
+            }
+
+            lastY = cell.y;
+        });
+
+        if(currentRow.length){
+            rows.push(currentRow);
+        }
+
+        setStatus('OCR per cell...');
+
+        extractedTable = [];
+
+        for(let r=0;r<rows.length;r++){
+
+            let rowData = [];
+
+            rows[r].sort((a,b)=>a.x-b.x);
+
+            for(let c=0;c<rows[r].length;c++){
+
+                let rect = rows[r][c];
+
+                let roi = src.roi(rect);
+
+                let tempCanvas =
+                    document.createElement('canvas');
+
+                cv.imshow(tempCanvas, roi);
+
+                const {
+                    data:{text}
+                } = await Tesseract.recognize(
+                    tempCanvas,
+                    'eng'
+                );
+
+                rowData.push(text.trim());
+
+                roi.delete();
+            }
+
+            extractedTable.push(rowData);
+        }
+
+        renderTable(extractedTable);
+
+        src.delete();
+        gray.delete();
+        binary.delete();
+        contours.delete();
+        hierarchy.delete();
+
+        setStatus('Done ✅');
     };
-
-  } catch (err) {
-
-    console.error(err);
-
-    alert('Extraction failed.');
-
-    setStatus('Error ❌');
-
-    showLoader(false);
-  }
 });
 
-function parseTable(text) {
+function renderTable(data){
 
-  const lines = text
-    .split('\n')
-    .filter(line => line.trim() !== '');
+    tableOutput.innerHTML = '';
 
-  return lines.map(line =>
-    line
-      .split(/\s{2,}|\t|\|/)
-      .filter(cell => cell.trim() !== '')
-  );
-}
+    data.forEach((row,rowIndex)=>{
 
-function renderTable(data) {
+        const tr = document.createElement('tr');
 
-  tableOutput.innerHTML = '';
+        row.forEach(cell=>{
 
-  data.forEach((row, rowIndex) => {
+            const td = document.createElement(
+                rowIndex===0 ? 'th':'td'
+            );
 
-    const tr = document.createElement('tr');
+            td.innerText = cell;
 
-    row.forEach(cell => {
+            tr.appendChild(td);
+        });
 
-      const td = document.createElement(
-        rowIndex === 0 ? 'th' : 'td'
-      );
-
-      td.innerText = cell;
-
-      tr.appendChild(td);
+        tableOutput.appendChild(tr);
     });
-
-    tableOutput.appendChild(tr);
-  });
 }
 
-downloadBtn.addEventListener('click', () => {
+document.getElementById('downloadBtn')
+.addEventListener('click',()=>{
 
-  if (!extractedData.length) {
-    alert('No data found.');
-    return;
-  }
+    if(!extractedTable.length){
+        alert('No data');
+        return;
+    }
 
-  const ws = XLSX.utils.aoa_to_sheet(extractedData);
+    const ws =
+        XLSX.utils.aoa_to_sheet(extractedTable);
 
-  const wb = XLSX.utils.book_new();
+    const wb = XLSX.utils.book_new();
 
-  XLSX.utils.book_append_sheet(
-    wb,
-    ws,
-    'TableData'
-  );
+    XLSX.utils.book_append_sheet(
+        wb,
+        ws,
+        'Sheet1'
+    );
 
-  XLSX.writeFile(
-    wb,
-    'table-data.xlsx'
-  );
+    XLSX.writeFile(wb,'table.xlsx');
 });
+
 </script>
 
 </body>
