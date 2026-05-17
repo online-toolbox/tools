@@ -205,7 +205,7 @@
     <p class="subtitle">Extract tables from images and export to Excel, CSV, or copy to clipboard</p>
 
     <div class="tip">
-      <strong>Best results:</strong> Use screenshots of tables with clear borders. Phone photos of printed tables may be less accurate.
+      <strong>Best results:</strong> Use screenshots of tables with clear borders. For menus/receipts without grid lines, uncheck "Auto-detect table structure" below.
     </div>
 
     <div class="tabs">
@@ -330,7 +330,7 @@
 
     function handleFile(file) {
       if (!file.type.startsWith('image/')) return showToast('Please upload an image');
-      if (file.size > 10 * 1024) return showToast('Max 10MB');
+      if (file.size > 10 * 1024 * 1024) return showToast('Max 10MB');
       selectedImageBlob = file;
       processImage(URL.createObjectURL(file));
     }
@@ -411,8 +411,10 @@
       document.getElementById('result').style.display = 'none';
 
       try {
+        const processedBlob = await preprocessForTable(selectedImageBlob);
+
         const result = await Tesseract.recognize(
-          selectedImageBlob,
+          processedBlob,
           lang,
           {
             logger: m => {
@@ -423,12 +425,16 @@
               }
             },
             tessedit_pageseg_mode: detectStructure? Tesseract.PSM.AUTO : Tesseract.PSM.SINGLE_BLOCK,
+            tessedit_ocr_engine_mode: Tesseract.OEM.LSTM_ONLY,
+            preserve_interword_spaces: '1',
+            tessedit_char_whitelist: '',
           }
         );
 
-        // Parse text into table structure
-        const lines = result.data.text.trim().split('\n').filter(l => l.trim());
-        extractedTableData = lines.map(line => line.split(/\s{2,}|\t/).map(cell => cell.trim()));
+        // Parse text into table structure with confidence filter
+        const words = result.data.words.filter(w => w.confidence > 40);
+        const rows = groupWordsIntoRows(words);
+        extractedTableData = rows.map(row => row.map(w => w.text));
 
         // Draw detected blocks on canvas for visual feedback
         const img = new Image();
@@ -440,12 +446,12 @@
           ctx.drawImage(img, 0, 0);
           ctx.strokeStyle = '#38bdf8';
           ctx.lineWidth = 2;
-          result.data.words.forEach(w => {
+          words.forEach(w => {
             const { x0, y0, x1, y1 } = w.bbox;
             ctx.strokeRect(x0, y0, x1 - x0, y1 - y0);
           });
         };
-        img.src = URL.createObjectURL(selectedImageBlob);
+        img.src = URL.createObjectURL(processedBlob);
 
         renderTable();
         document.getElementById('progress').style.display = 'none';
@@ -456,6 +462,56 @@
       }
       document.getElementById('extractBtn').disabled = false;
     };
+
+    async function preprocessForTable(blob) {
+      return new Promise((resolve) => {
+        const img = new Image();
+        img.onload = () => {
+          const canvas = document.createElement('canvas');
+          const ctx = canvas.getContext('2d');
+          // 3x upscale for low-res images, minimum 1200px on longest side
+          const scale = Math.max(3, 1200 / Math.max(img.width, img.height));
+          canvas.width = img.width * scale;
+          canvas.height = img.height * scale;
+          ctx.imageSmoothingEnabled = false;
+          ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
+
+          // Grayscale + contrast boost + threshold
+          const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
+          const data = imageData.data;
+          for (let i = 0; i < data.length; i += 4) {
+            const avg = (data[i] + data[i + 1] + data[i + 2]) / 3;
+            const contrast = 2.0;
+            const factor = (259 * (contrast + 255)) / (255 * (259 - contrast));
+            const newVal = Math.min(255, Math.max(0, factor * (avg - 128) + 128));
+            data[i] = data[i + 1] = data[i + 2] = newVal > 140? 255 : 0;
+          }
+          ctx.putImageData(imageData, 0, 0);
+          canvas.toBlob(resolve, 'image/png');
+        };
+        img.src = URL.createObjectURL(blob);
+      });
+    }
+
+    function groupWordsIntoRows(words, lineHeight = 15) {
+      if (!words.length) return [];
+      words.sort((a, b) => a.bbox.y0 - b.bbox.y0);
+      const rows = [];
+      let currentRow = [words[0]];
+      let currentY = words[0].bbox.y0;
+
+      for (let i = 1; i < words.length; i++) {
+        if (Math.abs(words[i].bbox.y0 - currentY) < lineHeight) {
+          currentRow.push(words[i]);
+        } else {
+          rows.push(currentRow.sort((a, b) => a.bbox.x0 - b.bbox.x0));
+          currentRow = [words[i]];
+          currentY = words[i].bbox.y0;
+        }
+      }
+      rows.push(currentRow.sort((a, b) => a.bbox.x0 - b.bbox.x0));
+      return rows;
+    }
 
     function renderTable() {
       const preview = document.getElementById('tablePreview');
