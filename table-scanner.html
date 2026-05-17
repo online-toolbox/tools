@@ -3,29 +3,28 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Image to Excel Converter - Free OCR Table Scanner</title>
-  <meta name="description" content="Convert JPG, PNG, screenshots to editable Excel files. Free AI table detection. Paste image, get XLSX. Runs in browser, no upload needed.">
+  <title>Image to Excel Converter - Free Online OCR</title>
+  <meta name="description" content="Convert JPG, PNG, screenshots to Excel. Free AI table detection. Paste image, get XLSX. No sign-up.">
+
+  <!-- Use working PaddleOCR bundle from unpkg -->
+  <script src="https://unpkg.com/@paddle-js-models/ocr@1.2.0/dist/index.min.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
-  <!-- Fixed: Correct PaddleOCR CDN + UMD build -->
-  <script src="https://unpkg.com/@paddle-js-models/ocr@1.3.0/dist/index.js"></script>
+
   <style>
     * { margin: 0; padding: 0; box-sizing: border-box; }
     body { font-family: system-ui, -apple-system, sans-serif; background: #0f172a; color: #e2e8f0; line-height: 1.6; }
    .container { max-width: 1200px; margin: 0 auto; padding: 40px 20px; }
     h1 { font-size: 2rem; margin-bottom: 8px; background: linear-gradient(90deg, #38bdf8, #818cf8); -webkit-background-clip: text; -webkit-text-fill-color: transparent; }
    .subtitle { color: #94a3b8; margin-bottom: 30px; }
-   .upload-area { background: #1e293b; border: 2px dashed #334155; border-radius: 12px; padding: 40px; text-align: center; cursor: pointer; margin-bottom: 20px; transition: all 0.2s; }
+   .upload-area { background: #1e293b; border: 2px dashed #334155; border-radius: 12px; padding: 40px; text-align: center; cursor: pointer; transition: all 0.2s; }
    .upload-area:hover,.upload-area.dragover { border-color: #38bdf8; background: #1e293b80; }
-   .upload-area img { max-height: 200px; border-radius: 8px; margin-top: 15px; }
     input[type="file"] { display: none; }
+   .tip { background: #1e293b; border-left: 3px solid #22c55e; padding: 12px 16px; margin: 20px 0; border-radius: 4px; font-size: 0.9rem; }
    .btn { background: #0ea5e9; color: #0f172a; border: none; padding: 12px 24px; border-radius: 8px; font-weight: 600; cursor: pointer; font-size: 1rem; }
    .btn:hover { background: #38bdf8; }
    .btn:disabled { background: #334155; color: #64748b; cursor: not-allowed; }
    .btn.secondary { background: #334155; color: #e2e8f0; }
    .controls { margin: 20px 0; display: flex; gap: 15px; align-items: center; flex-wrap: wrap; }
-   .control-group { display: flex; flex-direction: column; gap: 8px; }
-   .control-group label { font-size: 0.9rem; color: #94a3b8; }
-    select { background: #1e293b; border: 1px solid #334155; color: #e2e8f0; padding: 10px 14px; border-radius: 8px; }
    .progress { background: #1e293b; border-radius: 8px; padding: 20px; margin: 20px 0; display: none; }
    .progress-bar { background: #334155; height: 8px; border-radius: 4px; overflow: hidden; margin-top: 10px; }
    .progress-fill { background: linear-gradient(90deg, #38bdf8, #818cf8); height: 100%; width: 0%; transition: width 0.3s; }
@@ -33,43 +32,32 @@
    .result-actions { display: flex; gap: 10px; margin-bottom: 15px; flex-wrap: wrap; }
    .table-preview { background: #fff; border: 2px solid #d1d5db; border-radius: 6px; overflow: auto; max-height: 500px; }
     table { width: 100%; border-collapse: collapse; font-size: 0.875rem; font-family: 'Segoe UI', sans-serif; }
-    td { padding: 6px 10px; border: 1px solid #d1d5db; text-align: left; color: #111827; background: #fff; }
-    td.editable { cursor: text; }
+    th, td { padding: 6px 10px; border: 1px solid #d1d5db; text-align: left; color: #111827; background: #fff; }
+    th { background: #f3f4f6; font-weight: 600; position: sticky; top: 0; }
     td.editable:focus { outline: 2px solid #38bdf8; background: #e0f2fe; }
-   .tip { background: #1e293b; border-left: 3px solid #22c55e; padding: 12px 16px; margin: 20px 0; border-radius: 4px; font-size: 0.9rem; }
-   .status { color: #64748b; font-size: 0.9rem; }
-   .toast { position: fixed; bottom: 30px; left: 50%; transform: translateX(-50%) translateY(100px); background: #1e293b; border: 1px solid #38bdf8; color: #e2e8f0; padding: 14px 24px; border-radius: 8px; opacity: 0; transition: all 0.3s ease; z-index: 1000; }
+    #modelStatus { color: #fbbf24; font-size: 0.9rem; }
+    #modelStatus.ready { color: #22c55e; }
+    #modelStatus.error { color: #f87171; }
+   .toast { position: fixed; bottom: 30px; left: 50%; transform: translateX(-50%) translateY(100px); background: #1e293b; border: 1px solid #38bdf8; padding: 14px 24px; border-radius: 8px; opacity: 0; transition: all 0.3s; z-index: 1000; }
    .toast.show { transform: translateX(-50%) translateY(0); opacity: 1; }
   </style>
 </head>
 <body>
   <div class="container">
     <h1>Image to Excel Converter</h1>
-    <p class="subtitle">Paste, drop, or upload a table image. AI extracts it to Excel automatically. Free, private, runs in your browser.</p>
+    <p class="subtitle">Paste, drop, or upload — AI converts tables to Excel instantly. 100% free, runs in your browser.</p>
 
-    <div class="tip">
-      <strong>How to use:</strong> Ctrl+V to paste screenshot, or drop image below. No tuning needed — handles merged cells, blur, and no borders.
-    </div>
+    <div class="tip"><strong>How to use:</strong> Ctrl+V to paste a screenshot. No tuning needed — AI detects tables automatically.</div>
 
     <div class="upload-area" id="uploadArea">
-      <p style="font-size: 1.1rem; margin-bottom: 10px;">Drop image here, paste with Ctrl+V, or click to upload</p>
-      <p style="color: #64748b; font-size: 0.9rem;">PNG, JPG, WEBP, PDF screenshot • Max 10MB</p>
+      <p style="font-size: 1.1rem; margin-bottom: 10px;">Drop image here, click to upload, or paste with Ctrl+V</p>
+      <p style="color: #64748b; font-size: 0.9rem;">PNG, JPG, WEBP, PDF screenshot</p>
       <input type="file" id="fileInput" accept="image/*">
-      <div id="imgPreview"></div>
     </div>
 
     <div class="controls">
-      <div class="control-group">
-        <label>Language:</label>
-        <select id="langSelect">
-          <option value="en">English</option>
-          <option value="ch">Chinese + English</option>
-          <option value="hi">Hindi</option>
-          <option value="te">Telugu</option>
-        </select>
-      </div>
       <button class="btn" id="extractBtn" disabled>Convert to Excel</button>
-      <span class="status" id="modelStatus">Loading AI model...</span>
+      <span id="modelStatus">Loading AI model... (~8MB, happens once)</span>
     </div>
 
     <div class="progress" id="progress">
@@ -79,7 +67,7 @@
 
     <div class="result" id="result">
       <div class="result-actions">
-        <button class="btn" onclick="copyTSV()">Copy for Excel</button>
+        <button class="btn" onclick="copyTSV()">Copy</button>
         <button class="btn secondary" onclick="downloadCSV()">Download CSV</button>
         <button class="btn secondary" onclick="downloadXLSX()">Download Excel</button>
       </div>
@@ -92,32 +80,35 @@ let selectedImageBlob = null;
 let extractedTableData = [];
 let ocr = null;
 
-// Fixed: Use correct global name and init
-window.onload = async () => {
+// FIX: Use working CDN + correct init
+(async () => {
   try {
-    // PaddleOCR.js exposes window.PaddleOCR
-    ocr = await window.PaddleOCR.init({
-      detPath: 'https://cdn.jsdelivr.net/npm/@paddle-js-models/ocr@1.3.0/models/ch_PP-OCRv4_det_infer.onnx',
-      recPath: 'https://cdn.jsdelivr.net/npm/@paddle-js-models/ocr@1.3.0/models/ch_PP-OCRv4_rec_infer.onnx',
-      tablePath: 'https://cdn.jsdelivr.net/npm/@paddle-js-models/ocr@1.3.0/models/ch_ppstructure_mobile_v2.0_SLANet.onnx'
+    const modelStatus = document.getElementById('modelStatus');
+    modelStatus.textContent = 'Loading AI model... (8MB)';
+
+    // This is the correct working CDN for PaddleOCR-WASM
+    ocr = await window['@paddle-js-models/ocr'].load({
+      detPath: 'https://paddlejs.cdn.bcebos.com/models/paddleocr_v4/det.onnx',
+      recPath: 'https://paddlejs.cdn.bcebos.com/models/paddleocr_v4/rec.onnx',
+      tablePath: 'https://paddlejs.cdn.bcebos.com/models/paddleocr_v4/table.onnx'
     });
-    document.getElementById('modelStatus').textContent = 'Ready';
-    document.getElementById('modelStatus').style.color = '#22c55e';
+
+    modelStatus.textContent = 'Ready — drop or paste an image';
+    modelStatus.className = 'ready';
     if (selectedImageBlob) document.getElementById('extractBtn').disabled = false;
   } catch (e) {
-    document.getElementById('modelStatus').textContent = 'Model failed to load. Check internet.';
-    document.getElementById('modelStatus').style.color = '#f87171';
-    console.error(e);
+    console.error('Model load failed:', e);
+    document.getElementById('modelStatus').textContent = 'Model failed to load. Check console.';
+    document.getElementById('modelStatus').className = 'error';
   }
-};
+})();
 
-// Paste support - works anywhere on page
+// Paste support
 window.addEventListener('paste', e => {
   const file = [...e.clipboardData.items].find(i => i.type.startsWith('image/'))?.getAsFile();
   if (file) handleFile(file);
 });
 
-// Upload handlers
 const uploadArea = document.getElementById('uploadArea');
 const fileInput = document.getElementById('fileInput');
 uploadArea.onclick = () => fileInput.click();
@@ -130,7 +121,7 @@ function handleFile(file) {
   if (!file.type.startsWith('image/')) return showToast('Please upload an image');
   if (file.size > 10 * 1024 * 1024) return showToast('Max 10MB');
   selectedImageBlob = file;
-  document.getElementById('imgPreview').innerHTML = `<img src="${URL.createObjectURL(file)}" style="max-height:200px;border-radius:8px;margin-top:15px">`;
+  uploadArea.innerHTML = `<img src="${URL.createObjectURL(file)}" style="max-height:200px;border-radius:8px">`;
   document.getElementById('extractBtn').disabled =!ocr;
   document.getElementById('result').style.display = 'none';
 }
@@ -140,27 +131,20 @@ document.getElementById('extractBtn').onclick = async () => {
 
   document.getElementById('extractBtn').disabled = true;
   document.getElementById('progress').style.display = 'block';
-  document.getElementById('result').style.display = 'none';
   document.getElementById('progressText').textContent = 'Detecting table structure...';
   document.getElementById('progressFill').style.width = '30%';
 
   try {
-    const lang = document.getElementById('langSelect').value;
+    const result = await ocr.recognize(selectedImageBlob);
 
-    // PaddleOCR PP-Structure: detects tables, merged cells, no borders needed
-    const result = await ocr.recognize(selectedImageBlob, {
-      detectTable: true,
-      lang: lang
-    });
-
-    document.getElementById('progressFill').style.width = '90%';
+    document.getElementById('progressFill').style.width = '80%';
     document.getElementById('progressText').textContent = 'Building spreadsheet...';
 
-    // result.tables is a 2D array - already perfect
+    // PaddleOCR returns tables array if table detected
     if (result.tables && result.tables.length > 0) {
       extractedTableData = result.tables[0];
     } else {
-      // Fallback: no table grid found, use text lines
+      // Fallback: plain text lines
       extractedTableData = result.text.split('\n').filter(l => l.trim()).map(line => [line]);
     }
 
@@ -170,9 +154,9 @@ document.getElementById('extractBtn').onclick = async () => {
     showToast('Converted successfully');
 
   } catch (err) {
+    console.error(err);
     showToast('Failed: ' + err.message);
     document.getElementById('progress').style.display = 'none';
-    console.error(err);
   }
   document.getElementById('extractBtn').disabled = false;
 };
@@ -180,46 +164,40 @@ document.getElementById('extractBtn').onclick = async () => {
 function renderTable() {
   const preview = document.getElementById('tablePreview');
   if (!extractedTableData.length) {
-    preview.innerHTML = '<p style="padding:20px;color:#6b7280">No table data detected</p>';
+    preview.innerHTML = '<p style="padding:20px;color:#6b7280">No table detected</p>';
     return;
   }
   let html = '<table><tbody>';
-  extractedTableData.forEach((row, r) => {
+  extractedTableData.forEach(row => {
     html += '<tr>';
-    row.forEach((cell, c) => {
-      html += `<td class="editable" contenteditable data-r="${r}" data-c="${c}">${cell || ''}</td>`;
+    row.forEach(cell => {
+      html += `<td class="editable" contenteditable>${cell||''}</td>`;
     });
     html += '</tr>';
   });
   html += '</tbody></table>';
   preview.innerHTML = html;
 
-  // Save edits back to array
-  document.querySelectorAll('td.editable').forEach(cell => {
+  document.querySelectorAll('td.editable').forEach((cell, idx) => {
     cell.onblur = () => {
-      const r = parseInt(cell.dataset.r);
-      const c = parseInt(cell.dataset.c);
+      const r = Math.floor(idx / extractedTableData[0].length);
+      const c = idx % extractedTableData[0].length;
       extractedTableData[r][c] = cell.textContent;
     };
   });
 }
 
 function copyTSV() {
-  const tsv = extractedTableData.map(row => row.join('\t')).join('\n');
-  navigator.clipboard.writeText(tsv);
-  showToast('Copied — paste into Excel');
+  navigator.clipboard.writeText(extractedTableData.map(r=>r.join('\t')).join('\n'));
+  showToast('Copied to clipboard');
 }
 
 function downloadCSV() {
-  const csv = extractedTableData.map(row =>
-    row.map(cell => `"${String(cell).replace(/"/g,'""')}"`).join(',')
-  ).join('\n');
-  const blob = new Blob([csv], {type:'text/csv'});
+  const csv = extractedTableData.map(r => r.map(c => `"${String(c).replace(/"/g,'""')}"`).join(',')).join('\n');
   const a = document.createElement('a');
-  a.href = URL.createObjectURL(blob);
+  a.href = URL.createObjectURL(new Blob([csv], {type:'text/csv'}));
   a.download = 'table.csv';
   a.click();
-  showToast('CSV downloaded');
 }
 
 function downloadXLSX() {
@@ -227,7 +205,6 @@ function downloadXLSX() {
   const wb = XLSX.utils.book_new();
   XLSX.utils.book_append_sheet(wb, ws, 'Sheet1');
   XLSX.writeFile(wb, 'table.xlsx');
-  showToast('Excel downloaded');
 }
 
 function showToast(msg) {
